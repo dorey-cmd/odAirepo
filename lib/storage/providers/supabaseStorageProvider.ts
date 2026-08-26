@@ -2,6 +2,24 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { StorageProvider, StorageRef, StorageUploadInput } from "@/lib/storage/types";
 
 /**
+ * Supabase Storage object keys must be ASCII — a filename with Hebrew (or
+ * other non-ASCII) characters fails upload with "Invalid key". The original
+ * filename is preserved separately (environment_files.original_filename /
+ * contract_files.original_filename), so this only affects the storage path.
+ */
+function sanitizeForStorageKey(filename: string): string {
+  const lastDot = filename.lastIndexOf(".");
+  const base = lastDot > 0 ? filename.slice(0, lastDot) : filename;
+  const ext = lastDot > 0 ? filename.slice(lastDot) : "";
+  const safeBase = base
+    .replace(/[^A-Za-z0-9_-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  const safeExt = ext.replace(/[^A-Za-z0-9.]+/g, "");
+  return (safeBase || "file") + safeExt;
+}
+
+/**
  * Default storage backend. Path convention: {orgId}/{scopeId}/{uuid}-{filename},
  * where scopeId is an environment_id or contract_id — matches the
  * storage.objects RLS policies in supabase/migrations/0001_init_schema.sql,
