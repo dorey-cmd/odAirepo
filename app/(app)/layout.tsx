@@ -28,6 +28,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <Link href="/dashboard">OdAI</Link>
           <Link href="/environments">סביבות חוזה</Link>
           <Link href="/contracts">חוזים</Link>
+          <Link href="/settings/google-drive">Google Drive</Link>
           {isAdmin && <Link href="/admin">ניהול מערכת</Link>}
         </nav>
         <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>

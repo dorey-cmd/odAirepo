@@ -25,7 +25,13 @@ export async function getEnvironment(
 
 export async function createEnvironment(
   supabase: SupabaseClient,
-  input: { orgId: string; name: string; description?: string; createdBy: string },
+  input: {
+    orgId: string;
+    name: string;
+    description?: string;
+    createdBy: string;
+    storageProvider?: "supabase" | "google_drive";
+  },
 ): Promise<ContractEnvironment> {
   const { data, error } = await supabase
     .from("contract_environments")
@@ -34,6 +40,7 @@ export async function createEnvironment(
       name: input.name,
       description: input.description ?? null,
       created_by: input.createdBy,
+      storage_provider: input.storageProvider ?? "supabase",
     })
     .select("*")
     .single();

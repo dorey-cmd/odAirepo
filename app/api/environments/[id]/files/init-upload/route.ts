@@ -26,7 +26,7 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
 
   const storage = getEnvironmentStorageProvider(environment, supabase);
   try {
-    const ticket = await storage.createUploadTicket(environment.org_id, environment.id, filename);
+    const ticket = await storage.createUploadTicket(environment.org_id, environment.id, filename, mimeType);
     return NextResponse.json({ ticket });
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 500 });

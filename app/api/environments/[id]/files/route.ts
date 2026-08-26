@@ -2,9 +2,11 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getEnvironment } from "@/lib/db/queries/environments";
 import { getEnvironmentStorageProvider } from "@/lib/storage/factory";
+import { GoogleDriveStorageProvider } from "@/lib/storage/providers/googleDriveProvider";
 import { extractText } from "@/lib/parsing/extractText";
 import { extractStyleCatalog } from "@/lib/rendering/documentRenderClient";
 import { validateFile } from "@/lib/storage/fileRules";
+import type { StorageRef } from "@/lib/storage/types";
 import type { EnvironmentFileRole } from "@/types/environment";
 
 const VALID_ROLES: EnvironmentFileRole[] = [
@@ -34,24 +36,42 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
   if (!environment) return NextResponse.json({ error: "Environment not found" }, { status: 404 });
 
   const body = await req.json().catch(() => null);
-  const { path, file_role: fileRole, original_filename: originalFilename, mime_type: mimeType, size_bytes: sizeBytes } = body ?? {};
+  const {
+    path,
+    drive_file_id: driveFileId,
+    file_role: fileRole,
+    original_filename: originalFilename,
+    mime_type: mimeType,
+    size_bytes: sizeBytes,
+  } = body ?? {};
 
   if (
-    !path ||
+    (!path && !driveFileId) ||
     typeof fileRole !== "string" ||
     !VALID_ROLES.includes(fileRole as EnvironmentFileRole) ||
     !originalFilename ||
     !mimeType ||
     typeof sizeBytes !== "number"
   ) {
-    return NextResponse.json({ error: "path, file_role, original_filename, mime_type, and size_bytes are required" }, { status: 400 });
+    return NextResponse.json(
+      { error: "path (or drive_file_id), file_role, original_filename, mime_type, and size_bytes are required" },
+      { status: 400 },
+    );
   }
 
   const validationError = validateFile(originalFilename, mimeType, sizeBytes);
   if (validationError) return NextResponse.json({ error: validationError }, { status: 400 });
 
   const storage = getEnvironmentStorageProvider(environment, supabase);
-  const ref = { provider: environment.storage_provider, path } as const;
+  const ref: StorageRef = driveFileId
+    ? { provider: "google_drive", path: "", driveFileId }
+    : { provider: "supabase", path };
+
+  if (driveFileId && storage instanceof GoogleDriveStorageProvider) {
+    await storage.finalizeUploadedFile(environment.id, driveFileId).catch((err) => {
+      console.error("Drive permission replication failed:", err);
+    });
+  }
 
   let extractedText = "";
   let extractedStyleCatalog: unknown = null;
@@ -79,7 +99,8 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
       org_id: environment.org_id,
       file_role: fileRole,
       storage_provider: ref.provider,
-      storage_path: ref.path,
+      storage_path: ref.path || null,
+      google_drive_file_id: ref.driveFileId ?? null,
       original_filename: originalFilename,
       mime_type: mimeType,
       size_bytes: sizeBytes,

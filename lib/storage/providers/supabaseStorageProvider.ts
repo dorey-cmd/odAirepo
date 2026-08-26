@@ -44,7 +44,7 @@ export class SupabaseStorageProvider implements StorageProvider {
     const path = `${orgId}/${scopeId}/${crypto.randomUUID()}-${sanitizeForStorageKey(filename)}`;
     const { data, error } = await this.supabase.storage.from(this.bucket).createSignedUploadUrl(path);
     if (error) throw new Error(`Supabase Storage signed upload URL failed: ${error.message}`);
-    return { bucket: this.bucket, path: data.path, token: data.token };
+    return { provider: "supabase", bucket: this.bucket, path: data.path, token: data.token };
   }
 
   async download(ref: StorageRef): Promise<Buffer> {

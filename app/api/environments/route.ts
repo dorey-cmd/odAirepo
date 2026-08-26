@@ -24,6 +24,9 @@ export async function POST(req: Request) {
   if (!body?.name || typeof body.name !== "string") {
     return NextResponse.json({ error: "name is required" }, { status: 400 });
   }
+  if (body.storage_provider && !["supabase", "google_drive"].includes(body.storage_provider)) {
+    return NextResponse.json({ error: "invalid storage_provider" }, { status: 400 });
+  }
 
   try {
     const orgId = await getCurrentOrgId(supabase);
@@ -32,6 +35,7 @@ export async function POST(req: Request) {
       name: body.name,
       description: body.description,
       createdBy: user.id,
+      storageProvider: body.storage_provider,
     });
     return NextResponse.json({ environment }, { status: 201 });
   } catch (err) {

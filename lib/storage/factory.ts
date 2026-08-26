@@ -14,7 +14,7 @@ function build(
   bucket: string,
 ): StorageProvider {
   if (config.storage_provider === "google_drive") {
-    return new GoogleDriveStorageProvider(config.org_id);
+    return new GoogleDriveStorageProvider(supabase, config.org_id);
   }
   return new SupabaseStorageProvider(supabase, bucket);
 }

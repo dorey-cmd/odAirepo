@@ -13,9 +13,13 @@ export interface StorageUploadInput {
 }
 
 export interface UploadTicket {
-  bucket: string;
-  path: string;
-  token: string;
+  provider: StorageProviderKind;
+  /** Supabase: the storage path the file will land at once uploaded. */
+  bucket?: string;
+  path?: string;
+  token?: string;
+  /** Google Drive: PUT the file bytes directly to this resumable-session URL. */
+  uploadUrl?: string;
 }
 
 export interface StorageProvider {
@@ -24,5 +28,5 @@ export interface StorageProvider {
   getSignedUrl(ref: StorageRef, expiresInSec: number): Promise<string>;
   delete(ref: StorageRef): Promise<void>;
   /** For direct browser-to-storage uploads, bypassing the Next.js API body-size limit. */
-  createUploadTicket(orgId: string, scopeId: string, filename: string): Promise<UploadTicket>;
+  createUploadTicket(orgId: string, scopeId: string, filename: string, mimeType: string): Promise<UploadTicket>;
 }

@@ -47,10 +47,22 @@ export default function FileUploadForm({ environmentId }: { environmentId: strin
       const { ticket } = await initRes.json();
 
       setStatus("מעלה...");
-      const { error: uploadError } = await supabase.storage
-        .from(ticket.bucket)
-        .uploadToSignedUrl(ticket.path, ticket.token, file, { contentType: file.type });
-      if (uploadError) throw new Error(uploadError.message);
+      let driveFileId: string | null = null;
+      if (ticket.provider === "google_drive") {
+        const putRes = await fetch(ticket.uploadUrl, {
+          method: "PUT",
+          headers: { "Content-Type": file.type },
+          body: file,
+        });
+        if (!putRes.ok) throw new Error(`העלאה ל-Drive נכשלה: ${putRes.status}`);
+        const driveFile = await putRes.json();
+        driveFileId = driveFile.id;
+      } else {
+        const { error: uploadError } = await supabase.storage
+          .from(ticket.bucket)
+          .uploadToSignedUrl(ticket.path, ticket.token, file, { contentType: file.type });
+        if (uploadError) throw new Error(uploadError.message);
+      }
 
       setStatus("מעבד...");
       const finalizeRes = await fetch(`/api/environments/${environmentId}/files`, {
@@ -58,6 +70,7 @@ export default function FileUploadForm({ environmentId }: { environmentId: strin
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           path: ticket.path,
+          drive_file_id: driveFileId,
           file_role: fileRole,
           original_filename: file.name,
           mime_type: file.type,
