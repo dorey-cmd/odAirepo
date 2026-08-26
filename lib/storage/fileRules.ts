@@ -95,3 +95,26 @@ export function validateFile(filename: string, mimeType: string, sizeBytes: numb
   }
   return null;
 }
+
+const INTAKE_CATEGORIES: FileTypeRule["category"][] = ["word", "pdf"];
+export const INTAKE_ACCEPT_ATTRIBUTE = FILE_TYPE_RULES.filter((r) => INTAKE_CATEGORIES.includes(r.category))
+  .flatMap((r) => r.extensions)
+  .join(",");
+
+export function describeIntakeFileRules(): string {
+  return FILE_TYPE_RULES.filter((r) => INTAKE_CATEGORIES.includes(r.category))
+    .map((r) => `${r.label} (עד ${Math.round(r.maxBytes / MB)}MB)`)
+    .join(" · ");
+}
+
+/** Starting a new contract from a document: only Word/PDF make sense as intake data. */
+export function validateIntakeFile(filename: string, mimeType: string, sizeBytes: number): string | null {
+  const rule = findRuleFor(filename, mimeType);
+  if (!rule || !INTAKE_CATEGORIES.includes(rule.category)) {
+    return `סוג קובץ לא נתמך לקליטת חוזה. ניתן להעלות: ${describeIntakeFileRules()}`;
+  }
+  if (sizeBytes > rule.maxBytes) {
+    return `הקובץ גדול מדי (עד ${Math.round(rule.maxBytes / MB)}MB עבור ${rule.label})`;
+  }
+  return null;
+}

@@ -3,22 +3,12 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { ACCEPT_ATTRIBUTE, describeFileRules, validateFile } from "@/lib/storage/fileRules";
+import { INTAKE_ACCEPT_ATTRIBUTE, describeIntakeFileRules, validateIntakeFile } from "@/lib/storage/fileRules";
 import { uploadViaTicket } from "@/lib/storage/clientUpload";
 
-const ROLE_LABELS: Record<string, string> = {
-  template: "תבנית חוזה (Word)",
-  guidelines: "הנחיות",
-  reference: "חומר עזר",
-  font: "פונט",
-  exhibit: "נספח",
-  other: "אחר",
-};
-
-export default function FileUploadForm({ environmentId }: { environmentId: string }) {
+export default function NewContractFromFileForm({ environmentId }: { environmentId: string }) {
   const router = useRouter();
   const supabase = createClient();
-  const [fileRole, setFileRole] = useState("template");
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -28,15 +18,18 @@ export default function FileUploadForm({ environmentId }: { environmentId: strin
     if (!file) return;
     setError(null);
 
-    const clientError = validateFile(file.name, file.type, file.size);
+    const clientError = validateIntakeFile(file.name, file.type, file.size);
     if (clientError) {
       setError(clientError);
       return;
     }
 
+    const thinkingTimer = setTimeout(() => setStatus("מזהה פרטי חוזה..."), 5000);
+    const draftingTimer = setTimeout(() => setStatus("מכין טיוטה, זה עשוי לקחת עד דקה..."), 20000);
+
     try {
-      setStatus("מכין העלאה...");
-      const initRes = await fetch(`/api/environments/${environmentId}/files/init-upload`, {
+      setStatus("מעלה...");
+      const initRes = await fetch(`/api/environments/${environmentId}/contracts/init-upload`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filename: file.name, mimeType: file.type, sizeBytes: file.size }),
@@ -47,32 +40,31 @@ export default function FileUploadForm({ environmentId }: { environmentId: strin
       }
       const { ticket } = await initRes.json();
 
-      setStatus("מעלה...");
       const uploaded = await uploadViaTicket(ticket, file, supabase);
 
       setStatus("מעבד...");
-      const finalizeRes = await fetch(`/api/environments/${environmentId}/files`, {
+      const createRes = await fetch(`/api/environments/${environmentId}/contracts`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           path: uploaded.path,
           drive_file_id: uploaded.driveFileId,
-          file_role: fileRole,
           original_filename: file.name,
           mime_type: file.type,
           size_bytes: file.size,
         }),
       });
-      if (!finalizeRes.ok) {
-        const body = await finalizeRes.json().catch(() => ({}));
-        throw new Error(body.error ?? "שגיאה בשמירת הקובץ");
+      if (!createRes.ok) {
+        const body = await createRes.json().catch(() => ({}));
+        throw new Error(body.error ?? "שגיאה ביצירת החוזה");
       }
-
-      setFile(null);
-      router.refresh();
+      const { contractId } = await createRes.json();
+      router.push(`/contracts/${contractId}`);
     } catch (err) {
       setError((err as Error).message);
     } finally {
+      clearTimeout(thinkingTimer);
+      clearTimeout(draftingTimer);
       setStatus(null);
     }
   }
@@ -81,20 +73,10 @@ export default function FileUploadForm({ environmentId }: { environmentId: strin
     <form onSubmit={handleSubmit} className="stack">
       <div style={{ display: "flex", gap: "1rem", alignItems: "flex-end" }}>
         <label className="stack">
-          <span>סוג קובץ</span>
-          <select value={fileRole} onChange={(e) => setFileRole(e.target.value)}>
-            {Object.entries(ROLE_LABELS).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="stack">
-          <span>קובץ</span>
+          <span>מסמך עם פרטי החוזה (PDF / Word)</span>
           <input
             type="file"
-            accept={ACCEPT_ATTRIBUTE}
+            accept={INTAKE_ACCEPT_ATTRIBUTE}
             onChange={(e) => {
               setError(null);
               setFile(e.target.files?.[0] ?? null);
@@ -102,10 +84,10 @@ export default function FileUploadForm({ environmentId }: { environmentId: strin
           />
         </label>
         <button type="submit" disabled={!file || Boolean(status)}>
-          {status ?? "העלאה"}
+          {status ?? "התחל חוזה חדש"}
         </button>
       </div>
-      <p style={{ color: "var(--text-muted)", margin: 0, fontSize: "0.85rem" }}>{describeFileRules()}</p>
+      <p style={{ color: "var(--text-muted)", margin: 0, fontSize: "0.85rem" }}>{describeIntakeFileRules()}</p>
       {error && <span style={{ color: "var(--danger)" }}>{error}</span>}
     </form>
   );

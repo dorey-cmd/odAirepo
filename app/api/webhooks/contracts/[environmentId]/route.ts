@@ -43,7 +43,13 @@ export async function POST(req: Request, context: { params: Promise<{ environmen
 
   const contentType = req.headers.get("content-type") ?? "";
   let rawPayload: unknown = null;
-  const rawFiles: Array<{ filename: string; mime_type: string; storage_path: string }> = [];
+  const rawFiles: Array<{
+    filename: string;
+    mime_type: string;
+    storage_path?: string;
+    drive_file_id?: string;
+    provider: "supabase" | "google_drive";
+  }> = [];
 
   try {
     if (contentType.includes("multipart/form-data")) {
@@ -58,12 +64,20 @@ export async function POST(req: Request, context: { params: Promise<{ environmen
       for (const [, value] of form.entries()) {
         if (value instanceof File) {
           const buffer = Buffer.from(await value.arrayBuffer());
-          const ref = await storage.upload(environment.org_id, `${environment.id}/intake`, {
+          // scopeId must be the plain environment_id — the Drive provider
+          // resolves it back to a contract_environments row.
+          const ref = await storage.upload(environment.org_id, environment.id, {
             buffer,
             filename: value.name,
             mimeType: value.type || "application/octet-stream",
           });
-          rawFiles.push({ filename: value.name, mime_type: value.type, storage_path: ref.path });
+          rawFiles.push({
+            filename: value.name,
+            mime_type: value.type,
+            storage_path: ref.path || undefined,
+            drive_file_id: ref.driveFileId,
+            provider: ref.provider,
+          });
         }
       }
     } else {
@@ -84,6 +98,7 @@ export async function POST(req: Request, context: { params: Promise<{ environmen
       raw_files: rawFiles,
       verified: true,
       processing_status: "received",
+      source: "webhook",
     })
     .select("id")
     .single();

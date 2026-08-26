@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getEnvironment, listEnvironmentFiles } from "@/lib/db/queries/environments";
 import FileUploadForm from "./FileUploadForm";
+import NewContractFromFileForm from "./NewContractFromFileForm";
 
 export default async function EnvironmentDetailPage({
   params,
@@ -32,6 +33,14 @@ export default async function EnvironmentDetailPage({
         </p>
         <code style={{ userSelect: "all" }}>{webhookUrl}</code>
         <code style={{ userSelect: "all" }}>Authorization: Bearer {environment.webhook_token}</code>
+      </div>
+
+      <div className="card stack">
+        <h2 style={{ marginTop: 0 }}>או: התחלת חוזה חדש מקובץ</h2>
+        <p style={{ color: "var(--text-muted)", margin: 0 }}>
+          אפשר גם להתחיל חוזה חדש ישירות מכאן, בלי webhook — פשוט מעלים PDF או Word עם פרטי החוזה.
+        </p>
+        <NewContractFromFileForm environmentId={environment.id} />
       </div>
 
       <div className="card stack">

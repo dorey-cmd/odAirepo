@@ -33,7 +33,14 @@ export async function processIntakeEvent(eventId: string): Promise<void> {
       .eq("environment_id", environment.id);
 
     const fileTexts: { filename: string; text: string }[] = [];
-    const rawFiles = (event.raw_files as { filename: string; mime_type: string; storage_path: string }[]) ?? [];
+    const rawFiles =
+      (event.raw_files as {
+        filename: string;
+        mime_type: string;
+        storage_path?: string;
+        drive_file_id?: string;
+        provider?: "supabase" | "google_drive";
+      }[]) ?? [];
     if (rawFiles.length > 0) {
       const storage = getEnvironmentStorageProvider(
         { org_id: event.org_id, storage_provider: environment.storage_provider as "supabase" | "google_drive" },
@@ -41,7 +48,11 @@ export async function processIntakeEvent(eventId: string): Promise<void> {
       );
       for (const f of rawFiles) {
         try {
-          const buffer = await storage.download({ provider: "supabase", path: f.storage_path });
+          const buffer = await storage.download({
+            provider: f.provider ?? (environment.storage_provider as "supabase" | "google_drive"),
+            path: f.storage_path ?? "",
+            driveFileId: f.drive_file_id,
+          });
           const text = await extractText(buffer, f.mime_type, f.filename);
           fileTexts.push({ filename: f.filename, text });
         } catch (err) {
@@ -87,7 +98,7 @@ export async function processIntakeEvent(eventId: string): Promise<void> {
         org_id: event.org_id,
         title: `${environment.name} — ${new Date().toLocaleDateString("he-IL")}`,
         status: missing.length > 0 ? "awaiting_info" : "drafting",
-        intake_source: "webhook",
+        intake_source: event.source === "manual_upload" ? "manual_upload" : "webhook",
         raw_intake_event_id: eventId,
         extracted_fields: extractedFieldsObj,
         missing_fields: missing,
