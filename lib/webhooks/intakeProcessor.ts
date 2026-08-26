@@ -6,6 +6,23 @@ import { runChatTurn } from "@/lib/ai/chatEngine";
 import { logAiUsage } from "@/lib/ai/usageLog";
 import { EXTRACTION_MODEL } from "@/lib/ai/claudeClient";
 
+const NAME_FIELD_PATTERN = /name|customer|client|counterparty|לקוח|צד/i;
+
+/** "שם הלקוח, תאריך, כותרת חוזה" — best-effort since field keys are lawyer-defined per environment. */
+function buildContractTitle(
+  environmentName: string,
+  fieldDefs: { field_key: string; label: string }[] | null,
+  extractedFieldsObj: Record<string, unknown>,
+): string {
+  const dateStr = new Date().toLocaleDateString("he-IL");
+  const nameField = fieldDefs?.find((fd) => NAME_FIELD_PATTERN.test(fd.field_key) || NAME_FIELD_PATTERN.test(fd.label));
+  const customerName = nameField ? extractedFieldsObj[nameField.field_key] : undefined;
+
+  return customerName
+    ? `${customerName}, ${dateStr}, ${environmentName}`
+    : `${dateStr}, ${environmentName}`;
+}
+
 /**
  * Turns a logged webhook_intake_events row into a contract + its dedicated
  * chat. See plan §"Webhook Intake Pipeline". Called via Next.js `after()`
@@ -96,7 +113,7 @@ export async function processIntakeEvent(eventId: string): Promise<void> {
       .insert({
         environment_id: environment.id,
         org_id: event.org_id,
-        title: `${environment.name} — ${new Date().toLocaleDateString("he-IL")}`,
+        title: buildContractTitle(environment.name as string, fieldDefs, extractedFieldsObj),
         status: missing.length > 0 ? "awaiting_info" : "drafting",
         intake_source: event.source === "manual_upload" ? "manual_upload" : "webhook",
         raw_intake_event_id: eventId,

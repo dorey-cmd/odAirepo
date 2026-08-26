@@ -7,6 +7,30 @@ import { processIntakeEvent } from "@/lib/webhooks/intakeProcessor";
 export const runtime = "nodejs";
 
 /**
+ * This endpoint is meant to be called from anywhere — a backend automation,
+ * or (as it turns out lawyers actually do) a plain HTML form's client-side
+ * JS. The latter triggers a CORS preflight (OPTIONS) because of the
+ * Authorization header, which Next.js does not answer by default — without
+ * these headers the browser blocks the request before it's ever sent, while
+ * server-to-server calls (curl, Make.com) never hit this at all. Wide-open
+ * origin is fine here: the bearer token, not cookies/session, is the actual
+ * auth boundary, same as any public API key.
+ */
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+};
+
+function json(body: unknown, init?: { status?: number }) {
+  return NextResponse.json(body, { ...init, headers: CORS_HEADERS });
+}
+
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
+}
+
+/**
  * Generic contract-intake webhook. Any external system (CRM, form service,
  * GHL, Make/n8n) can POST here — see plan §"Webhook Intake Pipeline".
  *
@@ -22,7 +46,7 @@ export async function POST(req: Request, context: { params: Promise<{ environmen
   const { environmentId } = await context.params;
   const token = extractBearerToken(req.headers.get("authorization"));
   if (!token) {
-    return NextResponse.json({ error: "Missing bearer token" }, { status: 401 });
+    return json({ error: "Missing bearer token" }, { status: 401 });
   }
 
   const admin = createAdminClient();
@@ -32,13 +56,13 @@ export async function POST(req: Request, context: { params: Promise<{ environmen
     .eq("id", environmentId)
     .maybeSingle();
 
-  if (envError) return NextResponse.json({ error: envError.message }, { status: 500 });
-  if (!environment) return NextResponse.json({ error: "Unknown environment" }, { status: 404 });
+  if (envError) return json({ error: envError.message }, { status: 500 });
+  if (!environment) return json({ error: "Unknown environment" }, { status: 404 });
   if (!tokensMatch(token, environment.webhook_token)) {
-    return NextResponse.json({ error: "Invalid token" }, { status: 401 });
+    return json({ error: "Invalid token" }, { status: 401 });
   }
   if (environment.status !== "active") {
-    return NextResponse.json({ error: "Environment is archived" }, { status: 409 });
+    return json({ error: "Environment is archived" }, { status: 409 });
   }
 
   const contentType = req.headers.get("content-type") ?? "";
@@ -84,7 +108,7 @@ export async function POST(req: Request, context: { params: Promise<{ environmen
       rawPayload = await req.json();
     }
   } catch (err) {
-    return NextResponse.json({ error: `Could not parse request body: ${(err as Error).message}` }, { status: 400 });
+    return json({ error: `Could not parse request body: ${(err as Error).message}` }, { status: 400 });
   }
 
   const { data: event, error: insertError } = await admin
@@ -103,11 +127,11 @@ export async function POST(req: Request, context: { params: Promise<{ environmen
     .select("id")
     .single();
 
-  if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 });
+  if (insertError) return json({ error: insertError.message }, { status: 500 });
 
   after(() =>
     processIntakeEvent(event.id).catch((err) => console.error(`processIntakeEvent(${event.id}) failed:`, err)),
   );
 
-  return NextResponse.json({ eventId: event.id }, { status: 202 });
+  return json({ eventId: event.id }, { status: 202 });
 }
