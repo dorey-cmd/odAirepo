@@ -63,9 +63,15 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
 
   try {
     const admin = createAdminClient();
-    const newMessages = await runChatTurn(admin, contractId);
+    const newMessages = await runChatTurn(admin, contractId, req.signal);
     return NextResponse.json({ messages: newMessages });
   } catch (err) {
+    // The lawyer cancelled (see ContractChat.tsx). With `supportsCancellation`
+    // enabled for this route in vercel.json, Vercel aborts req.signal and can
+    // terminate the function outright on client disconnect, so this response
+    // is a best-effort fallback for the case where the abort races a normal
+    // completion rather than the only place cancellation is handled.
+    if (req.signal.aborted) return NextResponse.json({ error: "aborted" }, { status: 499 });
     return NextResponse.json({ error: (err as Error).message }, { status: 500 });
   }
 }

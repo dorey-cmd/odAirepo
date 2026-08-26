@@ -25,7 +25,11 @@ interface ChatMessageRow {
  * blocks — each turn is a fresh decision informed by the full text history and
  * current contract state, not a strict multi-turn tool-use conversation.
  */
-export async function runChatTurn(admin: SupabaseClient, contractId: string): Promise<ChatMessageRow[]> {
+export async function runChatTurn(
+  admin: SupabaseClient,
+  contractId: string,
+  signal?: AbortSignal,
+): Promise<ChatMessageRow[]> {
   const { data: contract, error: contractError } = await admin
     .from("contracts")
     .select("*, contract_environments(*)")
@@ -89,14 +93,17 @@ export async function runChatTurn(admin: SupabaseClient, contractId: string): Pr
   }
 
   const claude = createClaudeClient();
-  const response = await claude.messages.create({
-    model: DRAFTING_MODEL,
-    max_tokens: 8192,
-    system: systemPrompt,
-    tools: CHAT_TOOLS,
-    tool_choice: { type: "auto" },
-    messages,
-  });
+  const response = await claude.messages.create(
+    {
+      model: DRAFTING_MODEL,
+      max_tokens: 8192,
+      system: systemPrompt,
+      tools: CHAT_TOOLS,
+      tool_choice: { type: "auto" },
+      messages,
+    },
+    { signal },
+  );
 
   await logAiUsage(admin, {
     orgId: contract.org_id as string,

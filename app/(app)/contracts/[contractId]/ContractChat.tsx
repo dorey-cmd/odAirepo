@@ -18,6 +18,7 @@ export default function ContractChat({
   const [statusText, setStatusText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -45,11 +46,15 @@ export default function ContractChat({
     const text = input;
     setInput("");
 
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     try {
       const res = await fetch(`/api/contracts/${contractId}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: text }),
+        signal: controller.signal,
       });
 
       if (!res.ok) {
@@ -60,12 +65,22 @@ export default function ContractChat({
       const body = await res.json();
       setMessages((prev) => [...prev, ...body.messages]);
       router.refresh(); // picks up new contract_files / status shown outside this component
+    } catch (err) {
+      if ((err as Error).name !== "AbortError") {
+        setError((err as Error).message ?? "שגיאה בשליחת ההודעה");
+      }
+      // AbortError = the lawyer cancelled — nothing to show, just stop waiting.
     } finally {
       clearTimeout(thinkingTimer);
       clearTimeout(draftingTimer);
+      abortRef.current = null;
       setStatusText(null);
       setSending(false);
     }
+  }
+
+  function cancelSend() {
+    abortRef.current?.abort();
   }
 
   async function resolveRule(ruleId: string, status: "accepted" | "rejected") {
@@ -138,6 +153,13 @@ export default function ContractChat({
               <span />
             </span>
             {statusText}
+            <button
+              className="secondary"
+              style={{ padding: "0.15rem 0.6rem", fontSize: "0.8rem", marginInlineStart: "auto" }}
+              onClick={cancelSend}
+            >
+              בטל
+            </button>
           </div>
         )}
         <div ref={bottomRef} />
