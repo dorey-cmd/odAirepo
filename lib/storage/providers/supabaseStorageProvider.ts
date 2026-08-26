@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { StorageProvider, StorageRef, StorageUploadInput } from "@/lib/storage/types";
+import type { StorageProvider, StorageRef, StorageUploadInput, UploadTicket } from "@/lib/storage/types";
 
 /**
  * Supabase Storage object keys must be ASCII — a filename with Hebrew (or
@@ -32,12 +32,19 @@ export class SupabaseStorageProvider implements StorageProvider {
   ) {}
 
   async upload(orgId: string, scopeId: string, file: StorageUploadInput): Promise<StorageRef> {
-    const path = `${orgId}/${scopeId}/${crypto.randomUUID()}-${file.filename}`;
+    const path = `${orgId}/${scopeId}/${crypto.randomUUID()}-${sanitizeForStorageKey(file.filename)}`;
     const { error } = await this.supabase.storage
       .from(this.bucket)
       .upload(path, file.buffer, { contentType: file.mimeType, upsert: false });
     if (error) throw new Error(`Supabase Storage upload failed: ${error.message}`);
     return { provider: "supabase", path };
+  }
+
+  async createUploadTicket(orgId: string, scopeId: string, filename: string): Promise<UploadTicket> {
+    const path = `${orgId}/${scopeId}/${crypto.randomUUID()}-${sanitizeForStorageKey(filename)}`;
+    const { data, error } = await this.supabase.storage.from(this.bucket).createSignedUploadUrl(path);
+    if (error) throw new Error(`Supabase Storage signed upload URL failed: ${error.message}`);
+    return { bucket: this.bucket, path: data.path, token: data.token };
   }
 
   async download(ref: StorageRef): Promise<Buffer> {

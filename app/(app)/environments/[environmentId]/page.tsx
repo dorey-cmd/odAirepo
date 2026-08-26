@@ -40,24 +40,30 @@ export default async function EnvironmentDetailPage({
         {files.length === 0 ? (
           <p style={{ color: "var(--text-muted)" }}>עדיין לא הועלו קבצים.</p>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ textAlign: "right", color: "var(--text-muted)" }}>
-                <th>קובץ</th>
-                <th>סוג</th>
-                <th>גודל</th>
-              </tr>
-            </thead>
-            <tbody>
-              {files.map((f) => (
-                <tr key={f.id} style={{ borderTop: "1px solid var(--border)" }}>
-                  <td style={{ padding: "0.4rem 0" }}>{f.original_filename}</td>
-                  <td>{f.file_role}</td>
-                  <td>{f.size_bytes ? `${Math.round(f.size_bytes / 1024)} KB` : "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="stack">
+            {files.map((f) => {
+              const fileUrl = `/api/environments/${environment.id}/files/${f.id}`;
+              const isImage = f.mime_type?.startsWith("image/");
+              const isVideo = f.mime_type?.startsWith("video/");
+              return (
+                <div key={f.id} className="card stack" style={{ padding: "0.75rem 1rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <a href={fileUrl}>{f.original_filename}</a>
+                    <span style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>
+                      {f.file_role} · {f.size_bytes ? `${Math.round(f.size_bytes / 1024)} KB` : "—"}
+                    </span>
+                  </div>
+                  {isImage && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={fileUrl} alt={f.original_filename} style={{ maxWidth: "100%", maxHeight: 320, borderRadius: 8 }} />
+                  )}
+                  {isVideo && (
+                    <video src={fileUrl} controls style={{ maxWidth: "100%", maxHeight: 320, borderRadius: 8 }} />
+                  )}
+                </div>
+              );
+            })}
+          </div>
         )}
       </div>
     </div>

@@ -4,6 +4,7 @@ import { getEnvironment } from "@/lib/db/queries/environments";
 import { getEnvironmentStorageProvider } from "@/lib/storage/factory";
 import { extractText } from "@/lib/parsing/extractText";
 import { extractStyleCatalog } from "@/lib/rendering/documentRenderClient";
+import { validateFile } from "@/lib/storage/fileRules";
 import type { EnvironmentFileRole } from "@/types/environment";
 
 const VALID_ROLES: EnvironmentFileRole[] = [
@@ -15,6 +16,12 @@ const VALID_ROLES: EnvironmentFileRole[] = [
   "other",
 ];
 
+/**
+ * Finalizes an upload that already landed in storage via a signed upload
+ * ticket (see init-upload/route.ts) — downloads it back to run text/style
+ * extraction, then creates the DB row. The file itself never passes through
+ * this route, so it isn't subject to Vercel's ~4.5MB request body limit.
+ */
 export async function POST(req: Request, context: { params: Promise<{ id: string }> }) {
   const { id: environmentId } = await context.params;
   const supabase = await createClient();
@@ -26,34 +33,43 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
   const environment = await getEnvironment(supabase, environmentId);
   if (!environment) return NextResponse.json({ error: "Environment not found" }, { status: 404 });
 
-  const form = await req.formData();
-  const file = form.get("file");
-  const fileRole = form.get("file_role");
-  if (!(file instanceof File) || typeof fileRole !== "string" || !VALID_ROLES.includes(fileRole as EnvironmentFileRole)) {
-    return NextResponse.json({ error: "file and a valid file_role are required" }, { status: 400 });
+  const body = await req.json().catch(() => null);
+  const { path, file_role: fileRole, original_filename: originalFilename, mime_type: mimeType, size_bytes: sizeBytes } = body ?? {};
+
+  if (
+    !path ||
+    typeof fileRole !== "string" ||
+    !VALID_ROLES.includes(fileRole as EnvironmentFileRole) ||
+    !originalFilename ||
+    !mimeType ||
+    typeof sizeBytes !== "number"
+  ) {
+    return NextResponse.json({ error: "path, file_role, original_filename, mime_type, and size_bytes are required" }, { status: 400 });
   }
 
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const mimeType = file.type || "application/octet-stream";
+  const validationError = validateFile(originalFilename, mimeType, sizeBytes);
+  if (validationError) return NextResponse.json({ error: validationError }, { status: 400 });
 
   const storage = getEnvironmentStorageProvider(environment, supabase);
-  const ref = await storage.upload(environment.org_id, environment.id, {
-    buffer,
-    filename: file.name,
-    mimeType,
-  });
+  const ref = { provider: environment.storage_provider, path } as const;
 
-  const extractedText = await extractText(buffer, mimeType, file.name).catch(() => "");
-
+  let extractedText = "";
   let extractedStyleCatalog: unknown = null;
-  if (fileRole === "template" && file.name.toLowerCase().endsWith(".docx")) {
-    // Best-effort — the rendering service may not be reachable in every
-    // environment (e.g. local dev without it running); template files can
-    // still be uploaded and re-analyzed later.
-    extractedStyleCatalog = await extractStyleCatalog(buffer, file.name).catch((err) => {
-      console.error("extractStyleCatalog failed:", err);
-      return null;
-    });
+  try {
+    const buffer = await storage.download(ref);
+    extractedText = await extractText(buffer, mimeType, originalFilename).catch(() => "");
+
+    if (fileRole === "template" && originalFilename.toLowerCase().endsWith(".docx")) {
+      // Best-effort — the rendering service may not be reachable in every
+      // environment (e.g. local dev without it running); template files can
+      // still be uploaded and re-analyzed later.
+      extractedStyleCatalog = await extractStyleCatalog(buffer, originalFilename).catch((err) => {
+        console.error("extractStyleCatalog failed:", err);
+        return null;
+      });
+    }
+  } catch (err) {
+    console.error("post-upload extraction failed:", err);
   }
 
   const { data, error } = await supabase
@@ -64,10 +80,9 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
       file_role: fileRole,
       storage_provider: ref.provider,
       storage_path: ref.path,
-      google_drive_file_id: ref.driveFileId ?? null,
-      original_filename: file.name,
+      original_filename: originalFilename,
       mime_type: mimeType,
-      size_bytes: buffer.byteLength,
+      size_bytes: sizeBytes,
       extracted_text: extractedText,
       extracted_style_catalog: extractedStyleCatalog,
       uploaded_by: user.id,

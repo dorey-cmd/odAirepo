@@ -1,4 +1,4 @@
-import type { StorageProvider, StorageRef, StorageUploadInput } from "@/lib/storage/types";
+import type { StorageProvider, StorageRef, StorageUploadInput, UploadTicket } from "@/lib/storage/types";
 
 /**
  * Phase D (not yet implemented): backs a Contract Environment with the
@@ -24,6 +24,10 @@ export class GoogleDriveStorageProvider implements StorageProvider {
   }
 
   async delete(_ref: StorageRef): Promise<void> {
+    throw new Error("Google Drive storage backend not implemented yet");
+  }
+
+  async createUploadTicket(_orgId: string, _scopeId: string, _filename: string): Promise<UploadTicket> {
     throw new Error("Google Drive storage backend not implemented yet");
   }
 }
