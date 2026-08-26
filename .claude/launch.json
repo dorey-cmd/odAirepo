@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["next", "dev"],
+      "port": 3000
+    },
+    {
+      "name": "document-renderer",
+      "runtimeExecutable": "services/document-renderer/.venv/Scripts/python.exe",
+      "runtimeArgs": ["-m", "uvicorn", "app.main:app", "--app-dir", "services/document-renderer", "--port", "8077"],
+      "port": 8077
+    }
+  ]
+}
