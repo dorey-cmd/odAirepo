@@ -79,7 +79,12 @@ export async function runChatTurn(admin: SupabaseClient, contractId: string): Pr
       content: m.content as string,
     }));
 
-  if (messages.length === 0) {
+  // Claude's Messages API requires the conversation to end on a user turn.
+  // This is empty on the very first turn, and can also legitimately end on
+  // an assistant message when intake had nothing missing and this is called
+  // right after the seed message with no lawyer reply yet — both cases need
+  // a synthetic nudge appended.
+  if (messages.length === 0 || messages[messages.length - 1].role === "assistant") {
     messages.push({ role: "user", content: "(No lawyer message yet — decide whether to ask a clarifying question or, if you already have everything you need, draft the contract now.)" });
   }
 
