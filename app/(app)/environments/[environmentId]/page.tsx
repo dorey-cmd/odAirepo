@@ -1,5 +1,4 @@
 import { notFound } from "next/navigation";
-import Link from "next/link";
 import { FileText, FileImage, FileVideo, FileAudio, FileType, File as FileIcon, Webhook, FolderOpen, Files } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getEnvironment, listEnvironmentFiles, listEnvironments } from "@/lib/db/queries/environments";
@@ -7,7 +6,7 @@ import { listContractsByEnvironment } from "@/lib/db/queries/contracts";
 import FileUploadForm from "./FileUploadForm";
 import NewContractFromFileForm from "./NewContractFromFileForm";
 import FileActionsMenu from "./FileActionsMenu";
-import ContractStatusBadge from "@/components/ContractStatusBadge";
+import EnvironmentContractsTable from "./EnvironmentContractsTable";
 
 const ROLE_LABELS: Record<string, string> = {
   template: "תבנית חוזה",
@@ -63,36 +62,6 @@ export default async function EnvironmentDetailPage({
 
       <div className="card stack">
         <h2 style={{ marginTop: 0, display: "flex", alignItems: "center", gap: "0.5rem" }}>
-          <FolderOpen size={20} color="var(--gold-ink)" /> התחלת חוזה חדש מקובץ
-        </h2>
-        <p style={{ color: "var(--text-muted)", margin: 0 }}>
-          מעלים PDF או Word עם פרטי החוזה - אפשר גם לגרור את הקובץ לאזור למטה.
-        </p>
-        <NewContractFromFileForm environmentId={environment.id} />
-      </div>
-
-      <div className="card stack">
-        <h2 style={{ marginTop: 0, display: "flex", alignItems: "center", gap: "0.5rem" }}>
-          <Files size={20} color="var(--gold-ink)" /> חוזים בסביבה זו ({contracts.length})
-        </h2>
-        {contracts.length === 0 ? (
-          <p style={{ color: "var(--text-muted)" }}>עדיין אין חוזים בסביבה הזו.</p>
-        ) : (
-          <div className="stack">
-            {contracts.map((c) => (
-              <Link key={c.id} href={`/contracts/${c.id}`} className="card" style={{ padding: "0.75rem 1rem" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
-                  <strong>{c.title ?? c.id}</strong>
-                  <ContractStatusBadge contractId={c.id} initialStatus={c.status} />
-                </div>
-              </Link>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="card stack">
-        <h2 style={{ marginTop: 0, display: "flex", alignItems: "center", gap: "0.5rem" }}>
           <FileText size={20} color="var(--gold-ink)" /> קבצי הסביבה
         </h2>
         <FileUploadForm environmentId={environment.id} />
@@ -133,6 +102,27 @@ export default async function EnvironmentDetailPage({
               );
             })}
           </div>
+        )}
+      </div>
+
+      <div className="card stack">
+        <h2 style={{ marginTop: 0, display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <FolderOpen size={20} color="var(--gold-ink)" /> התחלת חוזה חדש מקובץ
+        </h2>
+        <p style={{ color: "var(--text-muted)", margin: 0 }}>
+          מעלים PDF או Word עם פרטי החוזה - אפשר גם לגרור את הקובץ לאזור למטה.
+        </p>
+        <NewContractFromFileForm environmentId={environment.id} />
+      </div>
+
+      <div className="card stack">
+        <h2 style={{ marginTop: 0, display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <Files size={20} color="var(--gold-ink)" /> חוזים בסביבה זו ({contracts.length})
+        </h2>
+        {contracts.length === 0 ? (
+          <p style={{ color: "var(--text-muted)" }}>עדיין אין חוזים בסביבה הזו.</p>
+        ) : (
+          <EnvironmentContractsTable contracts={contracts} />
         )}
       </div>
 
