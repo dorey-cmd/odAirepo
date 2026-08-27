@@ -132,7 +132,7 @@ button.gold:hover:not(:disabled) {
 }
 
 .card {
-  background: var(--surface);
+  background: linear-gradient(165deg, var(--surface) 0%, #fbfaf6 100%);
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 1.25rem;
@@ -171,7 +171,8 @@ thead th {
   color: var(--text-muted);
   font-weight: 600;
   padding: 0.5rem 0.6rem;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 2px solid transparent;
+  border-image: linear-gradient(90deg, var(--gold) 0%, rgba(201, 162, 39, 0.15) 60%) 1;
   background: var(--surface);
 }
 
@@ -210,19 +211,19 @@ tbody tr:hover {
 }
 
 .badge-success {
-  background: rgba(30, 126, 79, 0.1);
+  background: linear-gradient(135deg, rgba(30, 126, 79, 0.14) 0%, rgba(30, 126, 79, 0.05) 100%);
   color: var(--success);
   border-color: rgba(30, 126, 79, 0.25);
 }
 
 .badge-progress {
-  background: rgba(201, 162, 39, 0.12);
+  background: linear-gradient(135deg, rgba(201, 162, 39, 0.2) 0%, rgba(201, 162, 39, 0.06) 100%);
   color: var(--gold-ink);
   border-color: rgba(201, 162, 39, 0.3);
 }
 
 .badge-danger {
-  background: rgba(179, 57, 44, 0.1);
+  background: linear-gradient(135deg, rgba(179, 57, 44, 0.14) 0%, rgba(179, 57, 44, 0.05) 100%);
   color: var(--danger);
   border-color: rgba(179, 57, 44, 0.25);
 }

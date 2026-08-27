@@ -26,14 +26,15 @@ export default function NavLink({
         gap: "0.7rem",
         padding: "0.6rem 0.9rem",
         borderRadius: 8,
-        color: active ? "var(--navy-ink)" : "rgba(255,255,255,0.82)",
+        color: active ? "var(--navy-ink)" : "rgba(255,255,255,0.88)",
         background: active ? "linear-gradient(135deg, var(--gold) 0%, #e3c25a 100%)" : "transparent",
         boxShadow: active ? "0 2px 10px rgba(201,162,39,0.35)" : "none",
         fontWeight: active ? 600 : 500,
+        textDecoration: "none",
         transition: "background 0.15s ease, color 0.15s ease",
       }}
     >
-      <Icon size={18} strokeWidth={2} />
+      <Icon size={18} strokeWidth={2} color={active ? "var(--navy-ink)" : "#e3c25a"} />
       <span>{label}</span>
     </Link>
   );

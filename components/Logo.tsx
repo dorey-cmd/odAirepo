@@ -20,13 +20,12 @@ export default function Logo({ height = 64, showWordmark = true }: { height?: nu
           style={{
             fontFamily: "var(--font-sans), sans-serif",
             fontWeight: 600,
-            fontSize: "0.75rem",
+            fontSize: "1.125rem",
             color: "var(--text-muted)",
             letterSpacing: "0.16em",
-            textTransform: "uppercase",
           }}
         >
-          OdAI
+          odAi
         </span>
       )}
     </div>

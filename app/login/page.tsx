@@ -49,7 +49,7 @@ export default function LoginPage() {
           "var(--bg)",
       }}
     >
-      <Logo height={150} />
+      <Logo height={173} />
       <form onSubmit={handleSubmit} className="card stack" style={{ width: "100%", maxWidth: 380 }}>
         <label className="stack">
           <span>אימייל</span>

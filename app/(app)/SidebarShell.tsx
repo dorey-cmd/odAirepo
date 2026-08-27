@@ -71,12 +71,12 @@ export default function SidebarShell({
         <button className="app-hamburger-btn ghost" onClick={() => setOpen(true)}>
           <Menu size={22} />
         </button>
-        <Logo height={92} />
+        <Logo height={106} />
       </header>
       <div style={{ display: "flex", flex: 1 }}>
         {nav}
         {open && <div className="app-sidebar-backdrop" onClick={() => setOpen(false)} />}
-        <main style={{ flex: 1, minWidth: 0, maxWidth: 1080, margin: "0 auto", padding: "2rem 1.75rem" }}>
+        <main style={{ flex: 1, minWidth: 0, maxWidth: 1080, margin: "0 auto", padding: "3.25rem 1.75rem 2rem" }}>
           {children}
         </main>
       </div>
