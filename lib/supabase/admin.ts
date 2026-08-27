@@ -1,7 +1,7 @@
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 
 /**
- * Service-role client — bypasses RLS entirely. Only for server-side code paths
+ * Service-role client - bypasses RLS entirely. Only for server-side code paths
  * that run without a logged-in lawyer session (webhook ingestion, background
  * intake processing). Callers MUST set org_id/environment_id correctly
  * themselves; RLS provides no protection here.

@@ -22,7 +22,7 @@ interface ChatMessageRow {
  *
  * Simplification vs. the plan: tool calls are summarized into plain assistant
  * text for history replay rather than replayed as literal tool_use/tool_result
- * blocks — each turn is a fresh decision informed by the full text history and
+ * blocks - each turn is a fresh decision informed by the full text history and
  * current contract state, not a strict multi-turn tool-use conversation.
  */
 export async function runChatTurn(
@@ -86,10 +86,10 @@ export async function runChatTurn(
   // Claude's Messages API requires the conversation to end on a user turn.
   // This is empty on the very first turn, and can also legitimately end on
   // an assistant message when intake had nothing missing and this is called
-  // right after the seed message with no lawyer reply yet — both cases need
+  // right after the seed message with no lawyer reply yet - both cases need
   // a synthetic nudge appended.
   if (messages.length === 0 || messages[messages.length - 1].role === "assistant") {
-    messages.push({ role: "user", content: "(No lawyer message yet — decide whether to ask a clarifying question or, if you already have everything you need, draft the contract now.)" });
+    messages.push({ role: "user", content: "(No lawyer message yet - decide whether to ask a clarifying question or, if you already have everything you need, draft the contract now.)" });
   }
 
   const claude = createClaudeClient();
@@ -165,7 +165,7 @@ async function handleSubmitDraft(
         chat_id: chat!.id,
         org_id: contract.org_id,
         role: "assistant",
-        content: "לא נמצא קובץ תבנית בסביבת החוזה הזו — לא ניתן להפיק טיוטה בלי תבנית מקורית. יש להעלות תבנית תחילה.",
+        content: "לא נמצא קובץ תבנית בסביבת החוזה הזו - לא ניתן להפיק טיוטה בלי תבנית מקורית. יש להעלות תבנית תחילה.",
       })
       .select("*")
       .single();

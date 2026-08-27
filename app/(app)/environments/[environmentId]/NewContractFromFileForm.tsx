@@ -2,16 +2,16 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { createClient } from "@/lib/supabase/client";
 import { INTAKE_ACCEPT_ATTRIBUTE, describeIntakeFileRules, validateIntakeFile } from "@/lib/storage/fileRules";
 import { uploadViaTicket } from "@/lib/storage/clientUpload";
+import UploadProgressBar from "@/components/UploadProgressBar";
 
 export default function NewContractFromFileForm({ environmentId }: { environmentId: string }) {
   const router = useRouter();
-  const supabase = createClient();
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [progress, setProgress] = useState<number | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -40,7 +40,9 @@ export default function NewContractFromFileForm({ environmentId }: { environment
       }
       const { ticket } = await initRes.json();
 
-      const uploaded = await uploadViaTicket(ticket, file, supabase);
+      setProgress(0);
+      const uploaded = await uploadViaTicket(ticket, file, setProgress);
+      setProgress(null);
 
       setStatus("מעבד...");
       const createRes = await fetch(`/api/environments/${environmentId}/contracts`, {
@@ -66,12 +68,13 @@ export default function NewContractFromFileForm({ environmentId }: { environment
       clearTimeout(thinkingTimer);
       clearTimeout(draftingTimer);
       setStatus(null);
+      setProgress(null);
     }
   }
 
   return (
     <form onSubmit={handleSubmit} className="stack">
-      <div style={{ display: "flex", gap: "1rem", alignItems: "flex-end" }}>
+      <div style={{ display: "flex", gap: "1rem", alignItems: "flex-end", flexWrap: "wrap" }}>
         <label className="stack">
           <span>מסמך עם פרטי החוזה (PDF / Word)</span>
           <input
@@ -83,9 +86,13 @@ export default function NewContractFromFileForm({ environmentId }: { environment
             }}
           />
         </label>
-        <button type="submit" disabled={!file || Boolean(status)}>
-          {status ?? "התחל חוזה חדש"}
-        </button>
+        {progress !== null ? (
+          <UploadProgressBar label="מעלה" percent={progress} />
+        ) : (
+          <button type="submit" disabled={!file || Boolean(status)}>
+            {status ?? "התחל חוזה חדש"}
+          </button>
+        )}
       </div>
       <p style={{ color: "var(--text-muted)", margin: 0, fontSize: "0.85rem" }}>{describeIntakeFileRules()}</p>
       {error && <span style={{ color: "var(--danger)" }}>{error}</span>}

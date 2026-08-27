@@ -1,6 +1,6 @@
 /**
  * Best-effort text extraction for environment/contract file uploads.
- * No OCR — a scanned/image-only PDF returns empty text (known MVP gap,
+ * No OCR - a scanned/image-only PDF returns empty text (known MVP gap,
  * see plan §"Known Open Risks").
  */
 export async function extractText(buffer: Buffer, mimeType: string, filename: string): Promise<string> {

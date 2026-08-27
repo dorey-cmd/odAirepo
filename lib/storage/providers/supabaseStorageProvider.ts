@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { StorageProvider, StorageRef, StorageUploadInput, UploadTicket } from "@/lib/storage/types";
 
 /**
- * Supabase Storage object keys must be ASCII — a filename with Hebrew (or
+ * Supabase Storage object keys must be ASCII - a filename with Hebrew (or
  * other non-ASCII) characters fails upload with "Invalid key". The original
  * filename is preserved separately (environment_files.original_filename /
  * contract_files.original_filename), so this only affects the storage path.
@@ -21,7 +21,7 @@ function sanitizeForStorageKey(filename: string): string {
 
 /**
  * Default storage backend. Path convention: {orgId}/{scopeId}/{uuid}-{filename},
- * where scopeId is an environment_id or contract_id — matches the
+ * where scopeId is an environment_id or contract_id - matches the
  * storage.objects RLS policies in supabase/migrations/0001_init_schema.sql,
  * which check (storage.foldername(name))[1] against the caller's org_id.
  */
@@ -44,7 +44,7 @@ export class SupabaseStorageProvider implements StorageProvider {
     const path = `${orgId}/${scopeId}/${crypto.randomUUID()}-${sanitizeForStorageKey(filename)}`;
     const { data, error } = await this.supabase.storage.from(this.bucket).createSignedUploadUrl(path);
     if (error) throw new Error(`Supabase Storage signed upload URL failed: ${error.message}`);
-    return { provider: "supabase", bucket: this.bucket, path: data.path, token: data.token };
+    return { provider: "supabase", bucket: this.bucket, path: data.path, token: data.token, signedUrl: data.signedUrl };
   }
 
   async download(ref: StorageRef): Promise<Buffer> {

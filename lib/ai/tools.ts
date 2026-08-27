@@ -40,7 +40,7 @@ export const EXTRACT_FIELDS_TOOL: Anthropic.Tool = {
 export const SUBMIT_DRAFT_TOOL: Anthropic.Tool = {
   name: "submit_draft",
   description:
-    "Submit a complete contract draft, ready to render. Only reference style_name/numId/ilvl values that appear in the template's style catalog you were given — never invent new ones.",
+    "Submit a complete contract draft, ready to render. Only reference style_name/numId/ilvl values that appear in the template's style catalog you were given - never invent new ones.",
   input_schema: {
     type: "object",
     properties: {

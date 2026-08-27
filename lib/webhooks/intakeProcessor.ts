@@ -8,7 +8,7 @@ import { EXTRACTION_MODEL } from "@/lib/ai/claudeClient";
 
 const NAME_FIELD_PATTERN = /name|customer|client|counterparty|לקוח|צד/i;
 
-/** "שם הלקוח, תאריך, כותרת חוזה" — best-effort since field keys are lawyer-defined per environment. */
+/** "שם הלקוח, תאריך, כותרת חוזה" - best-effort since field keys are lawyer-defined per environment. */
 function buildContractTitle(
   environmentName: string,
   fieldDefs: { field_key: string; label: string }[] | null,
@@ -27,7 +27,7 @@ function buildContractTitle(
  * Turns a logged webhook_intake_events row into a contract + its dedicated
  * chat. See plan §"Webhook Intake Pipeline". Called via Next.js `after()`
  * from the webhook route so the caller gets a fast 202 without waiting on
- * Claude — see app/api/webhooks/contracts/[environmentId]/route.ts.
+ * Claude - see app/api/webhooks/contracts/[environmentId]/route.ts.
  */
 export async function processIntakeEvent(eventId: string): Promise<void> {
   const admin = createAdminClient();
@@ -95,7 +95,7 @@ export async function processIntakeEvent(eventId: string): Promise<void> {
       extractionUsage = result.usage;
     }
 
-    // No field schema defined yet for this environment — still hand the raw
+    // No field schema defined yet for this environment - still hand the raw
     // intake data + file text through to drafting context rather than
     // discarding it; there's just no structured gap-detection to run.
     const extractedFieldsObj: Record<string, unknown> =

@@ -19,7 +19,7 @@ export default async function GoogleDriveSettingsPage({
       <h1>חיבור Google Drive</h1>
       <p style={{ color: "var(--text-muted)" }}>
         חבר/י את Google Drive שלך כדי לאפשר לסביבות חוזה לשמור קבצים ישירות ב-Drive שלך במקום באחסון
-        הפנימי. תבחר/י תיקייה ראשית אחת — המערכת תיצור בתוכה תת-תיקייה לכל סביבת חוזה.
+        הפנימי. תבחר/י תיקייה ראשית אחת - המערכת תיצור בתוכה תת-תיקייה לכל סביבת חוזה.
       </p>
 
       {error && (

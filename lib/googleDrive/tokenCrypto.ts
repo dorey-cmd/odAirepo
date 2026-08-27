@@ -2,7 +2,7 @@ import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 
 /**
  * AES-256-GCM encryption for the Drive refresh token at rest in
- * storage_connections.encrypted_refresh_token — the app-level fallback the
+ * storage_connections.encrypted_refresh_token - the app-level fallback the
  * plan calls for when Supabase Vault isn't set up on the project.
  * TOKEN_ENCRYPTION_KEY must be 32 bytes, base64-encoded.
  */

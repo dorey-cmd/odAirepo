@@ -7,10 +7,10 @@ import { processIntakeEvent } from "@/lib/webhooks/intakeProcessor";
 export const runtime = "nodejs";
 
 /**
- * This endpoint is meant to be called from anywhere — a backend automation,
+ * This endpoint is meant to be called from anywhere - a backend automation,
  * or (as it turns out lawyers actually do) a plain HTML form's client-side
  * JS. The latter triggers a CORS preflight (OPTIONS) because of the
- * Authorization header, which Next.js does not answer by default — without
+ * Authorization header, which Next.js does not answer by default - without
  * these headers the browser blocks the request before it's ever sent, while
  * server-to-server calls (curl, Make.com) never hit this at all. Wide-open
  * origin is fine here: the bearer token, not cookies/session, is the actual
@@ -32,13 +32,13 @@ export async function OPTIONS() {
 
 /**
  * Generic contract-intake webhook. Any external system (CRM, form service,
- * GHL, Make/n8n) can POST here — see plan §"Webhook Intake Pipeline".
+ * GHL, Make/n8n) can POST here - see plan §"Webhook Intake Pipeline".
  *
  * This route authenticates + logs the raw event fast, then schedules the slow
- * part (field extraction via Claude, contract + chat creation — see
+ * part (field extraction via Claude, contract + chat creation - see
  * lib/webhooks/intakeProcessor.ts) to run via Next.js `after()` so the caller
  * gets its 202 without waiting. `after()` runs post-response in the same
- * invocation, on Vercel and locally alike — simpler than the DB-webhook hop
+ * invocation, on Vercel and locally alike - simpler than the DB-webhook hop
  * originally sketched in the plan, which would need a publicly reachable URL
  * for Supabase to call back into anyway.
  */
@@ -88,7 +88,7 @@ export async function POST(req: Request, context: { params: Promise<{ environmen
       for (const [, value] of form.entries()) {
         if (value instanceof File) {
           const buffer = Buffer.from(await value.arrayBuffer());
-          // scopeId must be the plain environment_id — the Drive provider
+          // scopeId must be the plain environment_id - the Drive provider
           // resolves it back to a contract_environments row.
           const ref = await storage.upload(environment.org_id, environment.id, {
             buffer,

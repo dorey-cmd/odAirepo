@@ -20,7 +20,7 @@ const VALID_ROLES: EnvironmentFileRole[] = [
 
 /**
  * Finalizes an upload that already landed in storage via a signed upload
- * ticket (see init-upload/route.ts) — downloads it back to run text/style
+ * ticket (see init-upload/route.ts) - downloads it back to run text/style
  * extraction, then creates the DB row. The file itself never passes through
  * this route, so it isn't subject to Vercel's ~4.5MB request body limit.
  */
@@ -80,7 +80,7 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
     extractedText = await extractText(buffer, mimeType, originalFilename).catch(() => "");
 
     if (fileRole === "template" && originalFilename.toLowerCase().endsWith(".docx")) {
-      // Best-effort — the rendering service may not be reachable in every
+      // Best-effort - the rendering service may not be reachable in every
       // environment (e.g. local dev without it running); template files can
       // still be uploaded and re-analyzed later.
       extractedStyleCatalog = await extractStyleCatalog(buffer, originalFilename).catch((err) => {

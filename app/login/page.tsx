@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import Logo from "@/components/Logo";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -33,9 +34,19 @@ export default function LoginPage() {
   }
 
   return (
-    <main style={{ maxWidth: 380, margin: "10vh auto", padding: "0 1rem" }}>
-      <h1 style={{ fontSize: "1.4rem", marginBottom: "1.5rem" }}>OdAI</h1>
-      <form onSubmit={handleSubmit} className="card stack">
+    <main
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "1.75rem",
+        padding: "0 1rem",
+      }}
+    >
+      <Logo size={44} />
+      <form onSubmit={handleSubmit} className="card stack" style={{ width: "100%", maxWidth: 380 }}>
         <label className="stack">
           <span>אימייל</span>
           <input

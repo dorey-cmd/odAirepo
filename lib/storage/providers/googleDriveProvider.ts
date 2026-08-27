@@ -7,14 +7,14 @@ import type { DriveOAuthClient } from "@/lib/googleDrive/oauthClient";
 
 /**
  * Backs a Contract Environment with the lawyer's own Google Drive. Folder
- * layout: {lawyer's chosen root folder} / {environment name} — every file
+ * layout: {lawyer's chosen root folder} / {environment name} - every file
  * belonging to that environment (template, guidelines, and every generated
  * contract draft) lives in that one subfolder. `contract_environments.
  * google_drive_root_folder_id` caches that subfolder's id once created.
  *
  * Permission replication: Drive does NOT auto-propagate a folder's sharing
  * to files created inside it via the API (only Shared Drives do, and those
- * need Workspace) — see the plan's Storage Abstraction section. So every
+ * need Workspace) - see the plan's Storage Abstraction section. So every
  * upload here explicitly copies the environment folder's permissions onto
  * the new file right after creating it.
  */
@@ -63,7 +63,7 @@ export class GoogleDriveStorageProvider implements StorageProvider {
       .eq("org_id", this.orgId)
       .maybeSingle();
     if (connError || !connection?.drive_root_folder_id) {
-      throw new Error("Google Drive root folder not selected yet — connect Drive and pick a folder first");
+      throw new Error("Google Drive root folder not selected yet - connect Drive and pick a folder first");
     }
 
     const drive = google.drive({ version: "v3", auth });
@@ -143,7 +143,7 @@ export class GoogleDriveStorageProvider implements StorageProvider {
 
     // Resumable upload session: the client PUTs the file bytes directly to the
     // returned Location URL, bypassing our own server (and Vercel's body-size
-    // limit) — same motivation as Supabase's signed upload URL.
+    // limit) - same motivation as Supabase's signed upload URL.
     const initRes = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable", {
       method: "POST",
       headers: {

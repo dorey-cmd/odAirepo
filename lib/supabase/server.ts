@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 
 type CookieToSet = { name: string; value: string; options?: CookieOptions };
 
-/** Server Component / Route Handler client — reads the lawyer's session from cookies, RLS-scoped. */
+/** Server Component / Route Handler client - reads the lawyer's session from cookies, RLS-scoped. */
 export async function createClient() {
   const cookieStore = await cookies();
 
@@ -21,7 +21,7 @@ export async function createClient() {
               cookieStore.set(name, value, options),
             );
           } catch {
-            // Called from a Server Component with no response to write to —
+            // Called from a Server Component with no response to write to -
             // safe to ignore as long as middleware refreshes the session.
           }
         },

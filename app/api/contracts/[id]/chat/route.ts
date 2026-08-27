@@ -38,7 +38,7 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
     return NextResponse.json({ error: "message is required" }, { status: 400 });
   }
 
-  // RLS-scoped read — throws no rows if this contract isn't in the caller's org.
+  // RLS-scoped read - throws no rows if this contract isn't in the caller's org.
   const { data: contract, error: contractError } = await supabase
     .from("contracts")
     .select("id, org_id")

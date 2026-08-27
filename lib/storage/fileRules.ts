@@ -1,11 +1,11 @@
 /**
  * What environment files can be uploaded, and how big they may be. Enforced
- * both client-side (fast feedback) and server-side (source of truth) — see
+ * both client-side (fast feedback) and server-side (source of truth) - see
  * app/api/environments/[id]/files/init-upload/route.ts.
  *
  * Uploads go straight from the browser to Supabase Storage via a signed
  * upload URL rather than through a Next.js API route, because Vercel
- * serverless functions cap request bodies at ~4.5MB — far too small for
+ * serverless functions cap request bodies at ~4.5MB - far too small for
  * scanned PDFs or video exhibits.
  */
 
@@ -69,7 +69,7 @@ export const FILE_TYPE_RULES: FileTypeRule[] = [
 
 export const ACCEPT_ATTRIBUTE = FILE_TYPE_RULES.flatMap((r) => r.extensions).join(",");
 
-/** Primary types worth advertising in the UI hint — font/text are supported but not the headline offering. */
+/** Primary types worth advertising in the UI hint - font/text are supported but not the headline offering. */
 const HEADLINE_CATEGORIES: FileTypeRule["category"][] = ["word", "pdf", "image", "video"];
 
 export function describeFileRules(): string {

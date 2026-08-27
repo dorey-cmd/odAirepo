@@ -34,14 +34,14 @@ export async function GET(req: Request) {
     .map((c) => c.trim())
     .find((c) => c.startsWith("gdrive_oauth_state="))
     ?.split("=")[1];
-  if (!cookieState || cookieState !== state) return redirectWithError("State mismatch — please try connecting again");
+  if (!cookieState || cookieState !== state) return redirectWithError("State mismatch - please try connecting again");
 
   try {
     const oauth2Client = createOAuthClient();
     const { tokens } = await oauth2Client.getToken(code);
     if (!tokens.refresh_token) {
       return redirectWithError(
-        "Google did not return a refresh token — disconnect this app at myaccount.google.com/permissions and try again",
+        "Google did not return a refresh token - disconnect this app at myaccount.google.com/permissions and try again",
       );
     }
     oauth2Client.setCredentials(tokens);

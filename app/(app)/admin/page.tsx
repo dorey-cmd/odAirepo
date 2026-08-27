@@ -1,7 +1,14 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isPlatformAdmin } from "@/lib/db/queries/admin";
+import { estimateCostUsd } from "@/lib/ai/pricing";
+import { STATUS_LABELS, NON_TERMINAL_STATUSES } from "@/lib/contracts/statusLabels";
+import type { ContractStatus } from "@/types/contract";
+import AdminOrgsTable from "./AdminOrgsTable";
+
+const STUCK_THRESHOLD_HOURS = 2;
 
 export default async function AdminPage() {
   const supabase = await createClient();
@@ -13,7 +20,7 @@ export default async function AdminPage() {
     await Promise.all([
       admin.from("orgs").select("id, name, created_at").order("created_at", { ascending: false }),
       admin.from("contract_environments").select("id, org_id"),
-      admin.from("contracts").select("id, org_id, status"),
+      admin.from("contracts").select("id, org_id, title, status, updated_at"),
       admin.from("ai_usage_log").select("org_id, purpose, model, input_tokens, output_tokens"),
       admin
         .from("webhook_intake_events")
@@ -29,58 +36,92 @@ export default async function AdminPage() {
   const contractCountByOrg = new Map<string, number>();
   for (const c of contracts ?? []) contractCountByOrg.set(c.org_id, (contractCountByOrg.get(c.org_id) ?? 0) + 1);
 
-  const usageByOrg = new Map<string, { input: number; output: number }>();
+  const usageByOrg = new Map<string, { input: number; output: number; cost: number }>();
   let totalInput = 0;
   let totalOutput = 0;
+  let totalCost = 0;
   for (const u of usage ?? []) {
-    const cur = usageByOrg.get(u.org_id) ?? { input: 0, output: 0 };
+    const cost = estimateCostUsd(u.model, u.input_tokens, u.output_tokens);
+    const cur = usageByOrg.get(u.org_id) ?? { input: 0, output: 0, cost: 0 };
     cur.input += u.input_tokens;
     cur.output += u.output_tokens;
+    cur.cost += cost;
     usageByOrg.set(u.org_id, cur);
     totalInput += u.input_tokens;
     totalOutput += u.output_tokens;
+    totalCost += cost;
   }
 
   const orgNameById = new Map((orgs ?? []).map((o) => [o.id, o.name]));
+
+  const stuckThresholdMs = Date.now() - STUCK_THRESHOLD_HOURS * 60 * 60 * 1000;
+  const stuckContracts = (contracts ?? [])
+    .filter((c) => NON_TERMINAL_STATUSES.includes(c.status) && new Date(c.updated_at).getTime() < stuckThresholdMs)
+    .sort((a, b) => new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime());
+
+  const orgRows = (orgs ?? []).map((o) => ({
+    id: o.id,
+    name: o.name,
+    createdAt: new Date(o.created_at).toLocaleDateString("he-IL"),
+    envCount: envCountByOrg.get(o.id) ?? 0,
+    contractCount: contractCountByOrg.get(o.id) ?? 0,
+    inputTokens: usageByOrg.get(o.id)?.input ?? 0,
+    outputTokens: usageByOrg.get(o.id)?.output ?? 0,
+    estCostUsd: usageByOrg.get(o.id)?.cost ?? 0,
+  }));
 
   return (
     <div className="stack">
       <h1>ניהול מערכת</h1>
 
       <div className="card stack">
-        <h2 style={{ marginTop: 0 }}>שימוש ב-AI (סה"כ)</h2>
+        <h2 style={{ marginTop: 0 }}>שימוש ב-AI (סה&quot;כ)</h2>
         <p style={{ margin: 0 }}>
           {totalInput.toLocaleString()} input tokens · {totalOutput.toLocaleString()} output tokens ·{" "}
-          {(usage ?? []).length} קריאות
+          {(usage ?? []).length} קריאות · עלות משוערת ${totalCost.toFixed(2)}
+        </p>
+        <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--text-muted)" }}>
+          העלות מבוססת על תעריפי Claude הנוכחיים - הערכה בלבד, לא חשבונית.
         </p>
       </div>
 
       <div className="card stack">
-        <h2 style={{ marginTop: 0 }}>ארגונים ({(orgs ?? []).length})</h2>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead>
-            <tr style={{ textAlign: "right", color: "var(--text-muted)" }}>
-              <th>שם</th>
-              <th>נוצר</th>
-              <th>סביבות</th>
-              <th>חוזים</th>
-              <th>Input tokens</th>
-              <th>Output tokens</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(orgs ?? []).map((o) => (
-              <tr key={o.id} style={{ borderTop: "1px solid var(--border)" }}>
-                <td style={{ padding: "0.4rem 0" }}>{o.name}</td>
-                <td>{new Date(o.created_at).toLocaleDateString("he-IL")}</td>
-                <td>{envCountByOrg.get(o.id) ?? 0}</td>
-                <td>{contractCountByOrg.get(o.id) ?? 0}</td>
-                <td>{(usageByOrg.get(o.id)?.input ?? 0).toLocaleString()}</td>
-                <td>{(usageByOrg.get(o.id)?.output ?? 0).toLocaleString()}</td>
+        <h2 style={{ marginTop: 0 }}>
+          חוזים תקועים (מעל {STUCK_THRESHOLD_HOURS} שעות) {stuckContracts.length > 0 && `(${stuckContracts.length})`}
+        </h2>
+        {stuckContracts.length === 0 ? (
+          <p style={{ color: "var(--text-muted)" }}>אין חוזים תקועים כרגע.</p>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>ארגון</th>
+                <th>כותרת</th>
+                <th>סטטוס</th>
+                <th>עודכן לאחרונה</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {stuckContracts.map((c) => (
+                <tr key={c.id}>
+                  <td>{orgNameById.get(c.org_id) ?? c.org_id}</td>
+                  <td>
+                    <Link href={`/contracts/${c.id}`}>{c.title ?? c.id}</Link>
+                  </td>
+                  <td>
+                    <span className="badge badge-danger">{STATUS_LABELS[c.status as ContractStatus] ?? c.status}</span>
+                  </td>
+                  <td>{new Date(c.updated_at).toLocaleString("he-IL")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <div className="card stack">
+        <h2 style={{ marginTop: 0 }}>ארגונים ({(orgs ?? []).length})</h2>
+        <AdminOrgsTable rows={orgRows} />
       </div>
 
       <div className="card stack">
@@ -88,9 +129,9 @@ export default async function AdminPage() {
         {(errors ?? []).length === 0 ? (
           <p style={{ color: "var(--text-muted)" }}>אין שגיאות פתוחות.</p>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <table>
             <thead>
-              <tr style={{ textAlign: "right", color: "var(--text-muted)" }}>
+              <tr>
                 <th>ארגון</th>
                 <th>שגיאה</th>
                 <th>מתי</th>
@@ -98,8 +139,8 @@ export default async function AdminPage() {
             </thead>
             <tbody>
               {(errors ?? []).map((e) => (
-                <tr key={e.id} style={{ borderTop: "1px solid var(--border)" }}>
-                  <td style={{ padding: "0.4rem 0" }}>{orgNameById.get(e.org_id) ?? e.org_id}</td>
+                <tr key={e.id}>
+                  <td>{orgNameById.get(e.org_id) ?? e.org_id}</td>
                   <td style={{ color: "var(--danger)" }}>{e.error_message}</td>
                   <td>{new Date(e.created_at).toLocaleString("he-IL")}</td>
                 </tr>

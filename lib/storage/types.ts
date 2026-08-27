@@ -18,6 +18,8 @@ export interface UploadTicket {
   bucket?: string;
   path?: string;
   token?: string;
+  /** Supabase: full signed-upload URL, PUT directly from the browser for real progress events. */
+  signedUrl?: string;
   /** Google Drive: PUT the file bytes directly to this resumable-session URL. */
   uploadUrl?: string;
 }

@@ -2,9 +2,9 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { createClient } from "@/lib/supabase/client";
 import { ACCEPT_ATTRIBUTE, describeFileRules, validateFile } from "@/lib/storage/fileRules";
 import { uploadViaTicket } from "@/lib/storage/clientUpload";
+import UploadProgressBar from "@/components/UploadProgressBar";
 
 const ROLE_LABELS: Record<string, string> = {
   template: "תבנית חוזה (Word)",
@@ -17,11 +17,11 @@ const ROLE_LABELS: Record<string, string> = {
 
 export default function FileUploadForm({ environmentId }: { environmentId: string }) {
   const router = useRouter();
-  const supabase = createClient();
   const [fileRole, setFileRole] = useState("template");
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [progress, setProgress] = useState<number | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -48,8 +48,10 @@ export default function FileUploadForm({ environmentId }: { environmentId: strin
       const { ticket } = await initRes.json();
 
       setStatus("מעלה...");
-      const uploaded = await uploadViaTicket(ticket, file, supabase);
+      setProgress(0);
+      const uploaded = await uploadViaTicket(ticket, file, setProgress);
 
+      setProgress(null);
       setStatus("מעבד...");
       const finalizeRes = await fetch(`/api/environments/${environmentId}/files`, {
         method: "POST",
@@ -74,12 +76,13 @@ export default function FileUploadForm({ environmentId }: { environmentId: strin
       setError((err as Error).message);
     } finally {
       setStatus(null);
+      setProgress(null);
     }
   }
 
   return (
     <form onSubmit={handleSubmit} className="stack">
-      <div style={{ display: "flex", gap: "1rem", alignItems: "flex-end" }}>
+      <div style={{ display: "flex", gap: "1rem", alignItems: "flex-end", flexWrap: "wrap" }}>
         <label className="stack">
           <span>סוג קובץ</span>
           <select value={fileRole} onChange={(e) => setFileRole(e.target.value)}>
@@ -101,9 +104,13 @@ export default function FileUploadForm({ environmentId }: { environmentId: strin
             }}
           />
         </label>
-        <button type="submit" disabled={!file || Boolean(status)}>
-          {status ?? "העלאה"}
-        </button>
+        {progress !== null ? (
+          <UploadProgressBar label="מעלה" percent={progress} />
+        ) : (
+          <button type="submit" disabled={!file || Boolean(status)}>
+            {status ?? "העלאה"}
+          </button>
+        )}
       </div>
       <p style={{ color: "var(--text-muted)", margin: 0, fontSize: "0.85rem" }}>{describeFileRules()}</p>
       {error && <span style={{ color: "var(--danger)" }}>{error}</span>}

@@ -38,7 +38,7 @@ export default async function EnvironmentDetailPage({
       <div className="card stack">
         <h2 style={{ marginTop: 0 }}>או: התחלת חוזה חדש מקובץ</h2>
         <p style={{ color: "var(--text-muted)", margin: 0 }}>
-          אפשר גם להתחיל חוזה חדש ישירות מכאן, בלי webhook — פשוט מעלים PDF או Word עם פרטי החוזה.
+          אפשר גם להתחיל חוזה חדש ישירות מכאן, בלי webhook - פשוט מעלים PDF או Word עם פרטי החוזה.
         </p>
         <NewContractFromFileForm environmentId={environment.id} />
       </div>
@@ -59,7 +59,7 @@ export default async function EnvironmentDetailPage({
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <a href={fileUrl}>{f.original_filename}</a>
                     <span style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>
-                      {f.file_role} · {f.size_bytes ? `${Math.round(f.size_bytes / 1024)} KB` : "—"}
+                      {f.file_role} · {f.size_bytes ? `${Math.round(f.size_bytes / 1024)} KB` : "-"}
                     </span>
                   </div>
                   {isImage && (

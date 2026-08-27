@@ -2,17 +2,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getContract, listContractFiles } from "@/lib/db/queries/contracts";
 import ContractChat from "./ContractChat";
-
-const STATUS_LABELS: Record<string, string> = {
-  intake: "בקליטה",
-  awaiting_info: "ממתין לפרטים",
-  drafting: "בניסוח",
-  draft_ready: "טיוטה מוכנה",
-  revising: "בעדכון",
-  finalized: "סופי",
-  archived: "בארכיון",
-  error: "שגיאה",
-};
+import ContractStatusBadge from "@/components/ContractStatusBadge";
 
 export default async function ContractDetailPage({
   params,
@@ -45,7 +35,7 @@ export default async function ContractDetailPage({
     <div className="stack">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
         <h1>{contract.title}</h1>
-        <span style={{ color: "var(--text-muted)" }}>{STATUS_LABELS[contract.status] ?? contract.status}</span>
+        <ContractStatusBadge contractId={contractId} initialStatus={contract.status} />
       </div>
       <p style={{ color: "var(--text-muted)", marginTop: -12 }}>{contract.contract_environments?.name}</p>
 

@@ -6,7 +6,7 @@ import { validateIntakeFile } from "@/lib/storage/fileRules";
 import { processIntakeEvent } from "@/lib/webhooks/intakeProcessor";
 
 /**
- * Starts a new contract from a lawyer-uploaded PDF/Word document — the
+ * Starts a new contract from a lawyer-uploaded PDF/Word document - the
  * manual-upload counterpart to the generic webhook (see plan's original
  * "or a PDF the lawyer can upload" requirement). Reuses the exact same
  * field-extraction + contract + chat pipeline as webhook intake.
@@ -66,7 +66,7 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
     .single();
   if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 });
 
-  // Interactive, lawyer-initiated — await it so we can hand back the new
+  // Interactive, lawyer-initiated - await it so we can hand back the new
   // contract's id to redirect to (unlike the public webhook, which returns
   // fast and processes via after()).
   await processIntakeEvent(event.id);

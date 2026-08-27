@@ -12,7 +12,7 @@ export function createOAuthClient() {
 
 /**
  * Use this type (not a direct import of OAuth2Client from google-auth-library)
- * everywhere a Drive OAuth client is passed around — googleapis bundles its
+ * everywhere a Drive OAuth client is passed around - googleapis bundles its
  * own nested copy of google-auth-library via googleapis-common, and a
  * separately-installed top-level copy is a structurally-identical but
  * nominally different type, which TypeScript then rejects.

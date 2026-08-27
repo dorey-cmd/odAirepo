@@ -14,6 +14,6 @@ export async function getCurrentOrgId(supabase: SupabaseClient): Promise<string>
     .single();
 
   if (error) throw new Error(`Could not resolve org for user: ${error.message}`);
-  if (!data?.default_org_id) throw new Error("User has no default_org_id — signup trigger may not have run");
+  if (!data?.default_org_id) throw new Error("User has no default_org_id - signup trigger may not have run");
   return data.default_org_id as string;
 }
