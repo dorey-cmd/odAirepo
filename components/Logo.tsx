@@ -16,17 +16,31 @@ export default function Logo({ height = 64, showWordmark = true }: { height?: nu
         priority
       />
       {showWordmark && (
-        <span
-          style={{
-            fontFamily: "var(--font-sans), sans-serif",
-            fontWeight: 600,
-            fontSize: "1.125rem",
-            color: "var(--text-muted)",
-            letterSpacing: "0.16em",
-          }}
-        >
-          odAi
-        </span>
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.15rem" }}>
+          <span
+            style={{
+              fontFamily: "var(--font-sans), sans-serif",
+              fontWeight: 600,
+              fontSize: "1.6875rem",
+              color: "var(--text-muted)",
+              letterSpacing: "0.16em",
+            }}
+          >
+            odAi
+          </span>
+          <span
+            style={{
+              fontFamily: "var(--font-sans), sans-serif",
+              fontWeight: 500,
+              fontSize: "0.75rem",
+              color: "var(--text-muted)",
+              letterSpacing: "0.02em",
+              marginInlineStart: "0.2rem",
+            }}
+          >
+            פחות עבודה. יותר עריכת דין.
+          </span>
+        </div>
       )}
     </div>
   );
