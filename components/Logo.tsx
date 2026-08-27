@@ -21,7 +21,7 @@ export default function Logo({ height = 64, showWordmark = true }: { height?: nu
             style={{
               fontFamily: "var(--font-sans), sans-serif",
               fontWeight: 600,
-              fontSize: "1.6875rem",
+              fontSize: "1.856rem",
               color: "var(--text-muted)",
               letterSpacing: "0.16em",
             }}
@@ -32,7 +32,7 @@ export default function Logo({ height = 64, showWordmark = true }: { height?: nu
             style={{
               fontFamily: "var(--font-sans), sans-serif",
               fontWeight: 500,
-              fontSize: "0.75rem",
+              fontSize: "0.825rem",
               color: "var(--text-muted)",
               letterSpacing: "0.02em",
               marginInlineStart: "0.2rem",
