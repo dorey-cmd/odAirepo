@@ -7,9 +7,10 @@ export default function Logo({ size = 34, showWordmark = true }: { size?: number
         style={{
           width: size,
           height: size,
-          borderRadius: 9,
+          borderRadius: size * 0.28,
           overflow: "hidden",
-          background: "var(--navy)",
+          background: "linear-gradient(135deg, var(--navy) 0%, var(--navy-ink) 55%, #14315c 100%)",
+          boxShadow: "0 4px 14px rgba(11,31,61,0.28), 0 0 0 1px rgba(201,162,39,0.18)",
           flexShrink: 0,
           display: "flex",
           alignItems: "center",

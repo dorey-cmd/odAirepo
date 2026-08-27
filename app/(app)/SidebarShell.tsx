@@ -21,7 +21,7 @@ export default function SidebarShell({
     <aside
       className="app-sidebar"
       style={{
-        background: "var(--navy)",
+        background: "var(--gradient-sidebar)",
         display: "flex",
         flexDirection: "column",
         padding: "1.25rem 1rem",
@@ -29,24 +29,13 @@ export default function SidebarShell({
         ...(open ? { transform: "translateX(0)" } : {}),
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
-          <Logo size={30} showWordmark={false} />
-          <span
-            style={{
-              color: "white",
-              fontFamily: "var(--font-serif), Georgia, serif",
-              fontWeight: 700,
-              fontSize: "1.1rem",
-            }}
-          >
-            OdAI
-          </span>
-        </div>
-        <button className="app-hamburger-btn ghost" style={{ color: "white" }} onClick={() => setOpen(false)}>
-          <X size={20} />
-        </button>
-      </div>
+      <button
+        className="app-hamburger-btn ghost"
+        style={{ color: "white", alignSelf: "flex-end" }}
+        onClick={() => setOpen(false)}
+      >
+        <X size={20} />
+      </button>
 
       <nav style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
         <NavLink href="/dashboard" label="לוח בקרה" icon={LayoutDashboard} />
@@ -57,44 +46,39 @@ export default function SidebarShell({
       </nav>
 
       <div
+        className="sidebar-user"
         style={{
           marginTop: "auto",
           paddingTop: "1rem",
           borderTop: "1px solid rgba(255,255,255,0.12)",
           display: "flex",
-          flexDirection: "column",
-          gap: "0.6rem",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "0.5rem",
         }}
       >
-        <span style={{ color: "rgba(255,255,255,0.65)", fontSize: "0.85rem", wordBreak: "break-all" }}>
+        <span style={{ color: "rgba(255,255,255,0.65)", fontSize: "0.8rem", wordBreak: "break-all" }}>
           {userEmail}
         </span>
-        <SignOutButton />
+        <SignOutButton iconOnly />
       </div>
     </aside>
   );
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh" }}>
-      {nav}
-      {open && <div className="app-sidebar-backdrop" onClick={() => setOpen(false)} />}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div
-          className="app-mobile-topbar"
-          style={{
-            alignItems: "center",
-            gap: "0.75rem",
-            padding: "0.75rem 1rem",
-            borderBottom: "1px solid var(--border)",
-            background: "var(--surface)",
-          }}
-        >
-          <button className="ghost" onClick={() => setOpen(true)}>
-            <Menu size={22} />
-          </button>
-          <Logo size={26} />
-        </div>
-        <main style={{ maxWidth: 1080, margin: "0 auto", padding: "2rem 1.75rem" }}>{children}</main>
+    <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+      <header className="brand-strip">
+        <button className="app-hamburger-btn ghost" onClick={() => setOpen(true)}>
+          <Menu size={22} />
+        </button>
+        <Logo size={30} />
+      </header>
+      <div style={{ display: "flex", flex: 1 }}>
+        {nav}
+        {open && <div className="app-sidebar-backdrop" onClick={() => setOpen(false)} />}
+        <main style={{ flex: 1, minWidth: 0, maxWidth: 1080, margin: "0 auto", padding: "2rem 1.75rem" }}>
+          {children}
+        </main>
       </div>
     </div>
   );

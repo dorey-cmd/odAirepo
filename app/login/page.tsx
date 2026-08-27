@@ -43,6 +43,10 @@ export default function LoginPage() {
         justifyContent: "center",
         gap: "1.75rem",
         padding: "0 1rem",
+        background:
+          "radial-gradient(ellipse 900px 600px at 50% -10%, rgba(11,31,61,0.08), transparent 60%), " +
+          "radial-gradient(ellipse 700px 500px at 100% 100%, rgba(201,162,39,0.07), transparent 60%), " +
+          "var(--bg)",
       }}
     >
       <Logo size={44} />
