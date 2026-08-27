@@ -29,3 +29,36 @@ export async function GET(
 
   return NextResponse.redirect(url);
 }
+
+export async function DELETE(
+  _req: Request,
+  context: { params: Promise<{ id: string; fileId: string }> },
+) {
+  const { id: environmentId, fileId } = await context.params;
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+
+  const environment = await getEnvironment(supabase, environmentId);
+  if (!environment) return NextResponse.json({ error: "Environment not found" }, { status: 404 });
+
+  const { data: file, error: fileError } = await supabase
+    .from("environment_files")
+    .select("*")
+    .eq("id", fileId)
+    .eq("environment_id", environmentId)
+    .single();
+  if (fileError || !file) return NextResponse.json({ error: "File not found" }, { status: 404 });
+
+  const storage = getEnvironmentStorageProvider(environment, supabase);
+  await storage
+    .delete({ provider: file.storage_provider, path: file.storage_path, driveFileId: file.google_drive_file_id ?? undefined })
+    .catch((err) => console.error(`Failed to delete storage object for file ${fileId}:`, err));
+
+  const { error: deleteError } = await supabase.from("environment_files").delete().eq("id", fileId);
+  if (deleteError) return NextResponse.json({ error: deleteError.message }, { status: 500 });
+
+  return NextResponse.json({ ok: true });
+}

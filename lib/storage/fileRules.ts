@@ -10,7 +10,7 @@
  */
 
 export interface FileTypeRule {
-  category: "word" | "pdf" | "image" | "video" | "font" | "text";
+  category: "word" | "pdf" | "image" | "video" | "audio" | "font" | "text";
   label: string;
   mimeTypes: string[];
   extensions: string[];
@@ -61,16 +61,23 @@ export const FILE_TYPE_RULES: FileTypeRule[] = [
   {
     category: "text",
     label: "טקסט",
-    mimeTypes: ["text/plain"],
-    extensions: [".txt"],
+    mimeTypes: ["text/plain", "text/markdown", "text/x-markdown"],
+    extensions: [".txt", ".md", ".markdown"],
     maxBytes: 5 * MB,
+  },
+  {
+    category: "audio",
+    label: "אודיו",
+    mimeTypes: ["audio/mpeg", "audio/mp4", "audio/wav", "audio/x-wav", "audio/ogg"],
+    extensions: [".mp3", ".m4a", ".wav", ".ogg"],
+    maxBytes: 50 * MB,
   },
 ];
 
 export const ACCEPT_ATTRIBUTE = FILE_TYPE_RULES.flatMap((r) => r.extensions).join(",");
 
 /** Primary types worth advertising in the UI hint - font/text are supported but not the headline offering. */
-const HEADLINE_CATEGORIES: FileTypeRule["category"][] = ["word", "pdf", "image", "video"];
+const HEADLINE_CATEGORIES: FileTypeRule["category"][] = ["word", "pdf", "image", "video", "audio", "text"];
 
 export function describeFileRules(): string {
   return FILE_TYPE_RULES.filter((r) => HEADLINE_CATEGORIES.includes(r.category))

@@ -5,17 +5,15 @@ import { useState } from "react";
 import { INTAKE_ACCEPT_ATTRIBUTE, describeIntakeFileRules, validateIntakeFile } from "@/lib/storage/fileRules";
 import { uploadViaTicket } from "@/lib/storage/clientUpload";
 import UploadProgressBar from "@/components/UploadProgressBar";
+import DropZone from "@/components/DropZone";
 
 export default function NewContractFromFileForm({ environmentId }: { environmentId: string }) {
   const router = useRouter();
-  const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!file) return;
+  async function uploadFile(file: File) {
     setError(null);
 
     const clientError = validateIntakeFile(file.name, file.type, file.size);
@@ -72,30 +70,22 @@ export default function NewContractFromFileForm({ environmentId }: { environment
     }
   }
 
+  const busy = Boolean(status);
+
   return (
-    <form onSubmit={handleSubmit} className="stack">
-      <div style={{ display: "flex", gap: "1rem", alignItems: "flex-end", flexWrap: "wrap" }}>
-        <label className="stack">
-          <span>מסמך עם פרטי החוזה (PDF / Word)</span>
-          <input
-            type="file"
-            accept={INTAKE_ACCEPT_ATTRIBUTE}
-            onChange={(e) => {
-              setError(null);
-              setFile(e.target.files?.[0] ?? null);
-            }}
-          />
-        </label>
-        {progress !== null ? (
-          <UploadProgressBar label="מעלה" percent={progress} />
-        ) : (
-          <button type="submit" disabled={!file || Boolean(status)}>
-            {status ?? "התחל חוזה חדש"}
-          </button>
-        )}
-      </div>
-      <p style={{ color: "var(--text-muted)", margin: 0, fontSize: "0.85rem" }}>{describeIntakeFileRules()}</p>
+    <div className="stack">
+      {progress !== null ? (
+        <UploadProgressBar label="מעלה" percent={progress} />
+      ) : (
+        <DropZone
+          onFile={uploadFile}
+          accept={INTAKE_ACCEPT_ATTRIBUTE}
+          disabled={busy}
+          label={busy ? (status ?? "") : "גרור/י מסמך עם פרטי החוזה לכאן, או לחצ/י לבחירה"}
+          hint={describeIntakeFileRules()}
+        />
+      )}
       {error && <span style={{ color: "var(--danger)" }}>{error}</span>}
-    </form>
+    </div>
   );
 }

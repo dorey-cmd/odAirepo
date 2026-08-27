@@ -228,6 +228,18 @@ tbody tr:hover {
   border-color: rgba(179, 57, 44, 0.25);
 }
 
+summary {
+  list-style: none;
+}
+
+summary::-webkit-details-marker {
+  display: none;
+}
+
+summary:hover {
+  color: var(--gold-ink);
+}
+
 .typing-dots {
   display: inline-flex;
   gap: 3px;

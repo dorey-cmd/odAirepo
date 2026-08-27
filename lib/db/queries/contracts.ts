@@ -10,6 +10,16 @@ export async function listContracts(supabase: SupabaseClient): Promise<(Contract
   return data as (Contract & { contract_environments: { name: string } })[];
 }
 
+export async function listContractsByEnvironment(supabase: SupabaseClient, environmentId: string): Promise<Contract[]> {
+  const { data, error } = await supabase
+    .from("contracts")
+    .select("*")
+    .eq("environment_id", environmentId)
+    .order("updated_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return data as Contract[];
+}
+
 export async function getContract(
   supabase: SupabaseClient,
   id: string,

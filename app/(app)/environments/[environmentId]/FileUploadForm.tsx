@@ -5,6 +5,7 @@ import { useState } from "react";
 import { ACCEPT_ATTRIBUTE, describeFileRules, validateFile } from "@/lib/storage/fileRules";
 import { uploadViaTicket } from "@/lib/storage/clientUpload";
 import UploadProgressBar from "@/components/UploadProgressBar";
+import DropZone from "@/components/DropZone";
 
 const ROLE_LABELS: Record<string, string> = {
   template: "תבנית חוזה (Word)",
@@ -18,14 +19,11 @@ const ROLE_LABELS: Record<string, string> = {
 export default function FileUploadForm({ environmentId }: { environmentId: string }) {
   const router = useRouter();
   const [fileRole, setFileRole] = useState("template");
-  const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!file) return;
+  async function uploadFile(file: File) {
     setError(null);
 
     const clientError = validateFile(file.name, file.type, file.size);
@@ -70,7 +68,6 @@ export default function FileUploadForm({ environmentId }: { environmentId: strin
         throw new Error(body.error ?? "שגיאה בשמירת הקובץ");
       }
 
-      setFile(null);
       router.refresh();
     } catch (err) {
       setError((err as Error).message);
@@ -80,40 +77,33 @@ export default function FileUploadForm({ environmentId }: { environmentId: strin
     }
   }
 
+  const busy = Boolean(status);
+
   return (
-    <form onSubmit={handleSubmit} className="stack">
-      <div style={{ display: "flex", gap: "1rem", alignItems: "flex-end", flexWrap: "wrap" }}>
-        <label className="stack">
-          <span>סוג קובץ</span>
-          <select value={fileRole} onChange={(e) => setFileRole(e.target.value)}>
-            {Object.entries(ROLE_LABELS).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="stack">
-          <span>קובץ</span>
-          <input
-            type="file"
-            accept={ACCEPT_ATTRIBUTE}
-            onChange={(e) => {
-              setError(null);
-              setFile(e.target.files?.[0] ?? null);
-            }}
-          />
-        </label>
-        {progress !== null ? (
-          <UploadProgressBar label="מעלה" percent={progress} />
-        ) : (
-          <button type="submit" disabled={!file || Boolean(status)}>
-            {status ?? "העלאה"}
-          </button>
-        )}
-      </div>
-      <p style={{ color: "var(--text-muted)", margin: 0, fontSize: "0.85rem" }}>{describeFileRules()}</p>
+    <div className="stack">
+      <label className="stack" style={{ maxWidth: 260 }}>
+        <span>סוג קובץ</span>
+        <select value={fileRole} onChange={(e) => setFileRole(e.target.value)} disabled={busy}>
+          {Object.entries(ROLE_LABELS).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      {progress !== null ? (
+        <UploadProgressBar label="מעלה" percent={progress} />
+      ) : (
+        <DropZone
+          onFile={uploadFile}
+          accept={ACCEPT_ATTRIBUTE}
+          disabled={busy}
+          label={busy ? (status ?? "") : "גרור/י קובץ לכאן, או לחצ/י לבחירה"}
+          hint={describeFileRules()}
+        />
+      )}
       {error && <span style={{ color: "var(--danger)" }}>{error}</span>}
-    </form>
+    </div>
   );
 }
