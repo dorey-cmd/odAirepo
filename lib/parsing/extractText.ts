@@ -1,7 +1,7 @@
 /**
  * Best-effort text extraction for environment/contract file uploads.
  * No OCR - a scanned/image-only PDF returns empty text (known MVP gap,
- * see plan §"Known Open Risks"). Audio files are transcribed via Whisper -
+ * see plan §"Known Open Risks"). Audio files are transcribed via AssemblyAI -
  * this is the one shared entry point used by both environment guideline
  * uploads and contract chat attachments, so a recorded voice memo becomes
  * usable text either way.
