@@ -76,12 +76,32 @@ export async function runChatTurn(
     missingFields: (contract.missing_fields as { field_key: string; reason: string }[]) ?? [],
   });
 
+  const attachmentIds = Array.from(
+    new Set((history ?? []).flatMap((m) => (m.attachment_file_ids as string[] | null) ?? [])),
+  );
+  const attachmentsById = new Map<string, { original_filename: string; extracted_text: string | null }>();
+  if (attachmentIds.length > 0) {
+    const { data: attachmentFiles } = await admin
+      .from("contract_files")
+      .select("id, original_filename, extracted_text")
+      .in("id", attachmentIds);
+    for (const f of attachmentFiles ?? []) attachmentsById.set(f.id, f);
+  }
+
   const messages = (history ?? [])
     .filter((m) => m.role !== "system" && m.content)
-    .map((m) => ({
-      role: m.role === "lawyer" ? ("user" as const) : ("assistant" as const),
-      content: m.content as string,
-    }));
+    .map((m) => {
+      const attachments = ((m.attachment_file_ids as string[] | null) ?? [])
+        .map((id) => attachmentsById.get(id))
+        .filter((f): f is { original_filename: string; extracted_text: string | null } => Boolean(f));
+      const attachmentText = attachments
+        .map((f) => `\n\n[קובץ מצורף: ${f.original_filename}]\n${f.extracted_text || "(לא ניתן היה לחלץ טקסט מהקובץ)"}`)
+        .join("");
+      return {
+        role: m.role === "lawyer" ? ("user" as const) : ("assistant" as const),
+        content: (m.content as string) + attachmentText,
+      };
+    });
 
   // Claude's Messages API requires the conversation to end on a user turn.
   // This is empty on the very first turn, and can also legitimately end on

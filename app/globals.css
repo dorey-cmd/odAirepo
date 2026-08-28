@@ -335,6 +335,42 @@ summary:hover {
     background: rgba(11, 31, 61, 0.35);
     z-index: 30;
   }
+
+  main {
+    padding: 1.5rem 1rem 2rem !important;
+  }
+
+  .brand-logo-topbar .brand-logo-img {
+    width: auto !important;
+    height: 40px !important;
+  }
+
+  .brand-logo-topbar .brand-logo-tagline {
+    display: none;
+  }
+
+  .brand-logo-topbar .brand-logo-title {
+    font-size: 1.1rem !important;
+  }
+
+  .brand-logo-hero .brand-logo-img {
+    width: auto !important;
+    height: 96px !important;
+  }
+
+  .brand-logo-hero .brand-logo-title {
+    font-size: 1.3rem !important;
+  }
+
+  .brand-logo-hero .brand-logo-tagline {
+    font-size: 0.7rem !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .chat-window {
+    height: min(70vh, 520px) !important;
+  }
 }
 
 @keyframes badge-pulse {

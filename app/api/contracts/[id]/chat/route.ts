@@ -37,6 +37,7 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
   if (!body?.message || typeof body.message !== "string") {
     return NextResponse.json({ error: "message is required" }, { status: 400 });
   }
+  const attachmentFileIds: string[] = Array.isArray(body.attachment_file_ids) ? body.attachment_file_ids : [];
 
   // RLS-scoped read - throws no rows if this contract isn't in the caller's org.
   const { data: contract, error: contractError } = await supabase
@@ -58,6 +59,7 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
     org_id: contract.org_id,
     role: "lawyer",
     content: body.message,
+    attachment_file_ids: attachmentFileIds,
   });
   if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 });
 

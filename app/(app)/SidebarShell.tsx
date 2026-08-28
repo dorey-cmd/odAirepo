@@ -71,7 +71,7 @@ export default function SidebarShell({
         <button className="app-hamburger-btn ghost" onClick={() => setOpen(true)}>
           <Menu size={22} />
         </button>
-        <Logo height={122} />
+        <Logo height={122} context="topbar" />
       </header>
       <div style={{ display: "flex", flex: 1 }}>
         {nav}

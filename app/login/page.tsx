@@ -67,7 +67,7 @@ export default function LoginPage() {
           "var(--bg)",
       }}
     >
-      <Logo height={199} />
+      <Logo height={199} context="hero" />
       <form onSubmit={handleSubmit} className="card stack" style={{ width: "100%", maxWidth: 420 }}>
         {mode === "sign-up" && (
           <>
