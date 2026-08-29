@@ -126,10 +126,16 @@ export async function runChatTurn(
   const claude = createClaudeClient();
   let response;
   try {
-    response = await claude.messages.create(
+    // A full contract's node tree (submit_draft's payload) can run well past
+    // 8192 tokens for a real multi-page agreement - that silently truncated
+    // the tool call with no error and no visible reply, leaving the contract
+    // stuck forever. Streaming is required once max_tokens is raised this
+    // high (see claude-api skill); .finalMessage() still gives back the same
+    // aggregated Message shape the rest of this function expects.
+    const stream = claude.messages.stream(
       {
         model: DRAFTING_MODEL,
-        max_tokens: 8192,
+        max_tokens: 32000,
         system: systemPrompt,
         tools: CHAT_TOOLS,
         tool_choice: { type: "auto" },
@@ -137,6 +143,7 @@ export async function runChatTurn(
       },
       { signal },
     );
+    response = await stream.finalMessage();
   } catch (err) {
     // Cancelled by the lawyer - revert to whatever was true before this turn
     // rather than leaving the badge stuck showing "AI is working".
@@ -154,6 +161,28 @@ export async function runChatTurn(
     model: DRAFTING_MODEL,
     usage: { input_tokens: response.usage.input_tokens, output_tokens: response.usage.output_tokens },
   });
+
+  if (response.stop_reason === "max_tokens") {
+    // Even 32000 tokens wasn't enough - surface this to the lawyer instead of
+    // silently dropping the turn (the original bug: no message, no draft,
+    // status quietly reset to "awaiting_info" as if nothing happened).
+    const { data: row, error } = await admin
+      .from("contract_chat_messages")
+      .insert({
+        chat_id: chat.id,
+        org_id: contract.org_id,
+        role: "assistant",
+        content: "התגובה הייתה ארוכה מדי ונקטעה באמצע - לא הופקה טיוטה. כדאי לנסות לפצל את הבקשה (למשל לבקש קודם רק חלק מהסעיפים), או לפנות לתמיכה אם זה חוזר על עצמו.",
+      })
+      .select("*")
+      .single();
+    if (error) throw new Error(error.message);
+    await admin
+      .from("contracts")
+      .update({ status: "error", updated_at: new Date().toISOString() })
+      .eq("id", contractId);
+    return [row];
+  }
 
   const newMessages: ChatMessageRow[] = [];
 
