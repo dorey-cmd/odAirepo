@@ -135,7 +135,7 @@ export async function runChatTurn(
     const stream = claude.messages.stream(
       {
         model: DRAFTING_MODEL,
-        max_tokens: 32000,
+        max_tokens: 128000,
         system: systemPrompt,
         tools: CHAT_TOOLS,
         tool_choice: { type: "auto" },
@@ -163,7 +163,7 @@ export async function runChatTurn(
   });
 
   if (response.stop_reason === "max_tokens") {
-    // Even 32000 tokens wasn't enough - surface this to the lawyer instead of
+    // Even the model's full 128K output budget wasn't enough - surface this to the lawyer instead of
     // silently dropping the turn (the original bug: no message, no draft,
     // status quietly reset to "awaiting_info" as if nothing happened).
     const { data: row, error } = await admin
