@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { ContractStatus } from "@/types/contract";
-import { NON_TERMINAL_STATUSES, STATUS_LABELS, statusVariant } from "@/lib/contracts/statusLabels";
+import { LIVE_PROCESSING_STATUSES, NON_TERMINAL_STATUSES, STATUS_LABELS, statusVariant } from "@/lib/contracts/statusLabels";
 
 const POLL_MS = 4000;
 
@@ -37,7 +37,7 @@ export default function ContractStatusBadge({
   }, [contractId, status]);
 
   const variant = statusVariant(status);
-  const isLive = NON_TERMINAL_STATUSES.includes(status);
+  const isLive = LIVE_PROCESSING_STATUSES.includes(status);
 
   return (
     <span className={`badge${variant !== "neutral" ? ` badge-${variant}` : ""}`}>

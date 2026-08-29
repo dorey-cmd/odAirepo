@@ -112,18 +112,40 @@ export async function runChatTurn(
     messages.push({ role: "user", content: "(No lawyer message yet - decide whether to ask a clarifying question or, if you already have everything you need, draft the contract now.)" });
   }
 
+  // Mark the contract as actively AI-processing for the duration of the Claude
+  // call, so the status badge can distinguish "AI is working right now" from
+  // "waiting on the lawyer" - see lib/contracts/statusLabels.ts. Revising vs.
+  // drafting only changes the label; a draft already exists past v0.
+  const previousStatus = contract.status as string;
+  const activeStatus = ((contract.current_draft_version as number) ?? 0) > 0 ? "revising" : "drafting";
+  await admin
+    .from("contracts")
+    .update({ status: activeStatus, updated_at: new Date().toISOString() })
+    .eq("id", contractId);
+
   const claude = createClaudeClient();
-  const response = await claude.messages.create(
-    {
-      model: DRAFTING_MODEL,
-      max_tokens: 8192,
-      system: systemPrompt,
-      tools: CHAT_TOOLS,
-      tool_choice: { type: "auto" },
-      messages,
-    },
-    { signal },
-  );
+  let response;
+  try {
+    response = await claude.messages.create(
+      {
+        model: DRAFTING_MODEL,
+        max_tokens: 8192,
+        system: systemPrompt,
+        tools: CHAT_TOOLS,
+        tool_choice: { type: "auto" },
+        messages,
+      },
+      { signal },
+    );
+  } catch (err) {
+    // Cancelled by the lawyer - revert to whatever was true before this turn
+    // rather than leaving the badge stuck showing "AI is working".
+    await admin
+      .from("contracts")
+      .update({ status: signal?.aborted ? previousStatus : "error", updated_at: new Date().toISOString() })
+      .eq("id", contractId);
+    throw err;
+  }
 
   await logAiUsage(admin, {
     orgId: contract.org_id as string,
@@ -164,6 +186,18 @@ export async function runChatTurn(
       });
       newMessages.push(msg);
     }
+  }
+
+  // If nothing in this turn moved the contract off the "AI is working" status
+  // we set above (a clarifying question, a guideline proposal alone, or
+  // submit_draft failing because there's no template yet), hand it back to
+  // the lawyer rather than leaving the badge stuck mid-processing.
+  const { data: currentContract } = await admin.from("contracts").select("status").eq("id", contractId).single();
+  if (currentContract?.status === activeStatus) {
+    await admin
+      .from("contracts")
+      .update({ status: "awaiting_info", updated_at: new Date().toISOString() })
+      .eq("id", contractId);
   }
 
   return newMessages;
