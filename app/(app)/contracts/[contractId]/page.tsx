@@ -1,5 +1,7 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { isPlatformAdmin } from "@/lib/db/queries/admin";
 import { getContract, listContractFiles } from "@/lib/db/queries/contracts";
 import ContractChat from "./ContractChat";
 import ContractStatusBadge from "@/components/ContractStatusBadge";
@@ -12,24 +14,34 @@ export default async function ContractDetailPage({
   const { contractId } = await params;
   const supabase = await createClient();
 
-  const contract = await getContract(supabase, contractId);
+  // Normal RLS scopes contracts to the caller's own org(s). A platform admin
+  // viewing a contract from a different org (e.g. from /admin/contracts)
+  // would otherwise 404 here even though they're allowed to see it read-only
+  // - fall back to the service-role client once confirmed as admin, rather
+  // than widening the contracts RLS policy itself.
+  let readClient = supabase;
+  let contract = await getContract(readClient, contractId);
+  if (!contract && (await isPlatformAdmin(supabase))) {
+    readClient = createAdminClient();
+    contract = await getContract(readClient, contractId);
+  }
   if (!contract) notFound();
 
-  const { data: chat } = await supabase
+  const { data: chat } = await readClient
     .from("contract_chats")
     .select("id")
     .eq("contract_id", contractId)
     .maybeSingle();
 
   const { data: messages } = chat
-    ? await supabase
+    ? await readClient
         .from("contract_chat_messages")
         .select("*")
         .eq("chat_id", chat.id)
         .order("created_at", { ascending: true })
     : { data: [] };
 
-  const files = await listContractFiles(supabase, contractId);
+  const files = await listContractFiles(readClient, contractId);
 
   return (
     <div className="stack">

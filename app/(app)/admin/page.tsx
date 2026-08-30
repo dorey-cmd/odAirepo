@@ -72,7 +72,10 @@ export default async function AdminPage() {
 
   return (
     <div className="stack">
-      <h1>ניהול מערכת</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+        <h1>ניהול מערכת</h1>
+        <Link href="/admin/contracts">כל החוזים בכל הארגונים ←</Link>
+      </div>
 
       <div className="card stack">
         <h2 style={{ marginTop: 0 }}>שימוש ב-AI (סה&quot;כ)</h2>

@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { isPlatformAdmin } from "@/lib/db/queries/admin";
 import { getContractStorageProvider } from "@/lib/storage/factory";
 
 export async function GET(
@@ -9,14 +11,26 @@ export async function GET(
   const { id: contractId, fileId } = await context.params;
   const supabase = await createClient();
 
-  const { data: contract, error: contractError } = await supabase
+  // Same admin-view fallback as the contract detail page - see its comment.
+  let client = supabase;
+  let contract = await client
     .from("contracts")
     .select("id, org_id, contract_environments(storage_provider)")
     .eq("id", contractId)
-    .single();
-  if (contractError || !contract) return NextResponse.json({ error: "Contract not found" }, { status: 404 });
+    .maybeSingle()
+    .then((r) => r.data);
+  if (!contract && (await isPlatformAdmin(supabase))) {
+    client = createAdminClient();
+    contract = await client
+      .from("contracts")
+      .select("id, org_id, contract_environments(storage_provider)")
+      .eq("id", contractId)
+      .maybeSingle()
+      .then((r) => r.data);
+  }
+  if (!contract) return NextResponse.json({ error: "Contract not found" }, { status: 404 });
 
-  const { data: file, error: fileError } = await supabase
+  const { data: file, error: fileError } = await client
     .from("contract_files")
     .select("*")
     .eq("id", fileId)
@@ -27,7 +41,7 @@ export async function GET(
   const environment = contract.contract_environments as unknown as { storage_provider: "supabase" | "google_drive" };
   const storage = getContractStorageProvider(
     { org_id: contract.org_id, storage_provider: environment.storage_provider },
-    supabase,
+    client,
   );
 
   const url = await storage.getSignedUrl(
