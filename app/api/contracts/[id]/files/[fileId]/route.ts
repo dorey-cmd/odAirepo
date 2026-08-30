@@ -47,6 +47,7 @@ export async function GET(
   const url = await storage.getSignedUrl(
     { provider: file.storage_provider, path: file.storage_path, driveFileId: file.google_drive_file_id ?? undefined },
     300,
+    file.original_filename,
   );
 
   return NextResponse.redirect(url);

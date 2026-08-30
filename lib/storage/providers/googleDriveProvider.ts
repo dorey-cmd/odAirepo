@@ -181,7 +181,8 @@ export class GoogleDriveStorageProvider implements StorageProvider {
     return Buffer.from(res.data as ArrayBuffer);
   }
 
-  async getSignedUrl(ref: StorageRef, _expiresInSec: number): Promise<string> {
+  async getSignedUrl(ref: StorageRef, _expiresInSec: number, _downloadFilename?: string): Promise<string> {
+    // Drive files are uploaded under their real name already (no sanitized/UUID key), so no override needed here.
     if (!ref.driveFileId) throw new Error("Missing driveFileId");
     const auth = await this.getAuth();
     const drive = google.drive({ version: "v3", auth });

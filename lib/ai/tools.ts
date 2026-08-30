@@ -53,7 +53,13 @@ export const SUBMIT_DRAFT_SECTION_TOOL: Anthropic.Tool = {
     "contract into a single call. Keep each section to a natural chunk you can comfortably produce in one response. " +
     "Set is_final_section to true only on the very last section - all sections submitted so far in this drafting pass are then " +
     "combined in the order you submitted them into one document. Only reference style_name/numId/ilvl values that appear in the " +
-    "template's style catalog you were given - never invent new ones.",
+    "template's style catalog you were given - never invent new ones. " +
+    "NUMBERING: never set both a literal number in `text` (e.g. \"6.3.1 ...\") and numId/ilvl on the same node - that renders the " +
+    "number twice. For legal clause numbering, prefer a literal number in `text` and leave numId/ilvl unset - this is the only way " +
+    "to preserve an exact numbering scheme with intentional gaps (e.g. clauses removed for a single-tenant version), which Word's " +
+    "own auto-numbering cannot do. Reserve numId/ilvl for genuine auto-lists where sequential renumbering is actually desired. " +
+    "ALIGNMENT: set `alignment` directly on a node (e.g. \"center\" for a title, a date line, or a signature block) rather than " +
+    "assuming a style_name implies a particular alignment - most templates apply alignment directly on the paragraph, not via a style.",
   input_schema: {
     type: "object",
     properties: {
@@ -71,6 +77,7 @@ export const SUBMIT_DRAFT_SECTION_TOOL: Anthropic.Tool = {
             text: { type: "string" },
             numId: { type: "integer" },
             ilvl: { type: "integer" },
+            alignment: { type: "string", enum: ["left", "center", "right", "justify"] },
             rows: { type: "array", items: { type: "array", items: { type: "string" } } },
           },
           required: ["type"],

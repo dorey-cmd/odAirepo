@@ -429,6 +429,34 @@ async function handleSubmitDraftSection(
   return [sectionRow, finalRow];
 }
 
+const PARTY_NAME_KEY_PATTERN = /שם|name|customer|client|counterparty|לקוח|צד|דייר|שוכר|קונה|מוכר/i;
+const BLANK_PLACEHOLDER_PATTERN = /ריק|למילוי|^_+$/;
+
+function findPartyName(filledFields: Record<string, unknown>): string | null {
+  for (const [key, value] of Object.entries(filledFields)) {
+    if (!PARTY_NAME_KEY_PATTERN.test(key) || typeof value !== "string") continue;
+    const v = value.trim();
+    if (v && !BLANK_PLACEHOLDER_PATTERN.test(v)) return v;
+  }
+  return null;
+}
+
+function sanitizeFilenamePart(s: string): string {
+  return s.replace(/[\\/:*?"<>|_]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/** {party name}_{contract title}_{date}_V{revision round} - so the lawyer can identify a draft at a glance without opening it. */
+function buildDraftFilename(
+  environment: Record<string, unknown>,
+  filledFields: Record<string, unknown>,
+  version: number,
+): string {
+  const partyName = sanitizeFilenamePart(findPartyName(filledFields) ?? "ללא שם צד");
+  const title = sanitizeFilenamePart((environment.name as string) ?? "חוזה");
+  const dateStr = new Date().toLocaleDateString("he-IL");
+  return `${partyName}_${title}_${dateStr}_V${version}.docx`;
+}
+
 async function finalizeDraft(
   admin: SupabaseClient,
   contract: Record<string, unknown>,
@@ -480,9 +508,10 @@ async function finalizeDraft(
       admin,
     );
     const nextVersion = ((contract.current_draft_version as number) ?? 0) + 1;
+    const filename = buildDraftFilename(environment, sections.filled_fields, nextVersion);
     const ref = await contractStorage.upload(environment.org_id as string, contract.id as string, {
       buffer: rendered,
-      filename: `draft-v${nextVersion}.docx`,
+      filename,
       mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     });
 
@@ -493,7 +522,7 @@ async function finalizeDraft(
       storage_provider: ref.provider,
       storage_path: ref.path,
       google_drive_file_id: ref.driveFileId ?? null,
-      original_filename: `draft-v${nextVersion}.docx`,
+      original_filename: filename,
       mime_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       size_bytes: rendered.byteLength,
       version: nextVersion,

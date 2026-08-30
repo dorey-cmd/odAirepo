@@ -52,6 +52,7 @@ class ContentNode(BaseModel):
     text: Optional[str] = None
     numId: Optional[int] = None
     ilvl: Optional[int] = None
+    alignment: Optional[Literal["left", "center", "right", "justify"]] = None
     rows: Optional[list[list[str]]] = None  # only for type == "table"
 
 

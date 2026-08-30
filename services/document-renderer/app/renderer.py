@@ -7,13 +7,63 @@ template's own StyleCatalog.
 """
 from __future__ import annotations
 
+import re
 from io import BytesIO
 
 from docx import Document
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
+from docx.shared import Pt
 
 from app.schemas import ContentNode, ContentTree
+
+_ALIGNMENT_MAP = {
+    "left": WD_ALIGN_PARAGRAPH.LEFT,
+    "center": WD_ALIGN_PARAGRAPH.CENTER,
+    "right": WD_ALIGN_PARAGRAPH.RIGHT,
+    "justify": WD_ALIGN_PARAGRAPH.JUSTIFY,
+}
+
+# A body paragraph the model already numbered as literal text ("6.3.1 ...",
+# "(א) ...", "23. ...") should never ALSO get Word's own numId/ilvl auto-
+# numbering - that renders both, producing visibly doubled numbers. This is
+# a deterministic backstop: even if the prompt guidance is ignored, the
+# renderer itself won't let both apply to the same paragraph.
+_LEADING_NUMBER_RE = re.compile(r"^\s*(\(?[0-9]+([.\-][0-9]+)*\)?[.\)]?|\(?[א-ת]\)?[.\)])\s")
+
+# Legal templates typed directly in Word are commonly typed with the
+# style's own space-after left at zero, which reads as a solid wall of text
+# once assembled from many short paragraphs. Guaranteeing a minimum here -
+# rather than asking the model to somehow know to add spacing - is a system-
+# level formatting guarantee, not a per-document AI judgment call.
+_MIN_SPACE_AFTER_PT = 8
+
+
+def _looks_pre_numbered(text: str | None) -> bool:
+    return bool(text and _LEADING_NUMBER_RE.match(text.strip()))
+
+
+def _effective_space_after_pt(paragraph) -> float | None:
+    style = paragraph.style
+    seen = set()
+    while style is not None and id(style) not in seen:
+        seen.add(id(style))
+        space_after = style.paragraph_format.space_after
+        if space_after is not None:
+            return space_after.pt
+        style = getattr(style, "base_style", None)
+    return None
+
+
+def _ensure_min_spacing(paragraph) -> None:
+    direct = paragraph.paragraph_format.space_after
+    if direct is not None and direct.pt >= _MIN_SPACE_AFTER_PT:
+        return
+    inherited = _effective_space_after_pt(paragraph)
+    if inherited is not None and inherited >= _MIN_SPACE_AFTER_PT:
+        return
+    paragraph.paragraph_format.space_after = Pt(_MIN_SPACE_AFTER_PT)
 
 
 def _clear_body_keep_section(document: Document) -> None:
@@ -46,8 +96,11 @@ def _known_paragraph_style_names(document: Document) -> set[str]:
 def _add_paragraph(document: Document, node: ContentNode, known_styles: set[str]):
     style_name = node.style_name if node.style_name in known_styles else None
     paragraph = document.add_paragraph(node.text or "", style=style_name)
-    if node.numId is not None:
+    if node.numId is not None and not _looks_pre_numbered(node.text):
         _set_num_pr(paragraph, node.numId, node.ilvl or 0)
+    if node.alignment:
+        paragraph.alignment = _ALIGNMENT_MAP.get(node.alignment)
+    _ensure_min_spacing(paragraph)
     return paragraph
 
 

@@ -53,10 +53,10 @@ export class SupabaseStorageProvider implements StorageProvider {
     return Buffer.from(await data.arrayBuffer());
   }
 
-  async getSignedUrl(ref: StorageRef, expiresInSec: number): Promise<string> {
+  async getSignedUrl(ref: StorageRef, expiresInSec: number, downloadFilename?: string): Promise<string> {
     const { data, error } = await this.supabase.storage
       .from(this.bucket)
-      .createSignedUrl(ref.path, expiresInSec);
+      .createSignedUrl(ref.path, expiresInSec, downloadFilename ? { download: downloadFilename } : undefined);
     if (error) throw new Error(`Supabase Storage signed URL failed: ${error.message}`);
     return data.signedUrl;
   }

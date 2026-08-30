@@ -27,7 +27,8 @@ export interface UploadTicket {
 export interface StorageProvider {
   upload(orgId: string, scopeId: string, file: StorageUploadInput): Promise<StorageRef>;
   download(ref: StorageRef): Promise<Buffer>;
-  getSignedUrl(ref: StorageRef, expiresInSec: number): Promise<string>;
+  /** downloadFilename, when given, sets Content-Disposition to that name - the storage path itself may be a sanitized/UUID-prefixed key. */
+  getSignedUrl(ref: StorageRef, expiresInSec: number, downloadFilename?: string): Promise<string>;
   delete(ref: StorageRef): Promise<void>;
   /** For direct browser-to-storage uploads, bypassing the Next.js API body-size limit. */
   createUploadTicket(orgId: string, scopeId: string, filename: string, mimeType: string): Promise<UploadTicket>;
