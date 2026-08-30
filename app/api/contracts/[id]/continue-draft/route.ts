@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { runChatTurn } from "@/lib/ai/chatEngine";
+import { translateAiError } from "@/lib/ai/errorMessages";
 
 /**
  * Continues a multi-section draft with no new lawyer message - see
@@ -32,6 +33,7 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
     return NextResponse.json({ messages: newMessages });
   } catch (err) {
     if (req.signal.aborted) return NextResponse.json({ error: "aborted" }, { status: 499 });
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
+    console.error(`continue-draft failed for contract ${contractId}:`, err);
+    return NextResponse.json({ error: translateAiError((err as Error).message) }, { status: 500 });
   }
 }

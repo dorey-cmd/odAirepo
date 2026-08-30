@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { runChatTurn } from "@/lib/ai/chatEngine";
+import { translateAiError } from "@/lib/ai/errorMessages";
 
 export async function GET(_req: Request, context: { params: Promise<{ id: string }> }) {
   const { id: contractId } = await context.params;
@@ -74,6 +75,7 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
     // is a best-effort fallback for the case where the abort races a normal
     // completion rather than the only place cancellation is handled.
     if (req.signal.aborted) return NextResponse.json({ error: "aborted" }, { status: 499 });
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
+    console.error(`chat turn failed for contract ${contractId}:`, err);
+    return NextResponse.json({ error: translateAiError((err as Error).message) }, { status: 500 });
   }
 }
