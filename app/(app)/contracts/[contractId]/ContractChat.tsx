@@ -64,7 +64,6 @@ export default function ContractChat({
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const abortRef = useRef<AbortController | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -112,15 +111,14 @@ export default function ContractChat({
     setInput("");
     setPendingAttachments([]);
 
-    const controller = new AbortController();
-    abortRef.current = controller;
-
+    // No AbortController here by design - once a drafting operation starts
+    // (including the auto-continuation loop below) the lawyer has no UI
+    // affordance to interrupt it; it runs through to completion.
     try {
       const res = await fetch(`/api/contracts/${contractId}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: text, attachment_file_ids: attachmentIds }),
-        signal: controller.signal,
       });
 
       if (!res.ok) {
@@ -147,7 +145,6 @@ export default function ContractChat({
         }
         const contRes = await fetch(`/api/contracts/${contractId}/continue-draft`, {
           method: "POST",
-          signal: controller.signal,
         });
         if (!contRes.ok) {
           const b = await contRes.json().catch(() => ({}));
@@ -161,21 +158,13 @@ export default function ContractChat({
 
       router.refresh(); // picks up new contract_files / status shown outside this component
     } catch (err) {
-      if ((err as Error).name !== "AbortError") {
-        setError((err as Error).message ?? "שגיאה בשליחת ההודעה");
-      }
-      // AbortError = the lawyer cancelled - nothing to show, just stop waiting.
+      setError((err as Error).message ?? "שגיאה בשליחת ההודעה");
     } finally {
       clearTimeout(step1Timer);
       clearTimeout(step2Timer);
-      abortRef.current = null;
       setStepIndex(null);
       setSending(false);
     }
-  }
-
-  function cancelSend() {
-    abortRef.current?.abort();
   }
 
   async function attachFile(file: File) {
@@ -341,14 +330,8 @@ export default function ContractChat({
               flexWrap: "wrap",
             }}
           >
+            {/* No cancel control by design - once drafting starts it runs to completion, uninterruptible from the UI. */}
             <StepProgress steps={DRAFT_STEPS} activeIndex={stepIndex} />
-            <button
-              className="ghost"
-              style={{ padding: "0.15rem 0.5rem", fontSize: "0.8rem", marginInlineStart: "auto" }}
-              onClick={cancelSend}
-            >
-              <X size={14} /> בטל
-            </button>
           </div>
         )}
         <div ref={bottomRef} />
