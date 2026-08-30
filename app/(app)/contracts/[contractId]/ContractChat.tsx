@@ -128,8 +128,37 @@ export default function ContractChat({
         setError(body.error ?? "שגיאה בשליחת ההודעה");
         return;
       }
-      const body = await res.json();
+      let body = await res.json();
       setMessages((prev) => [...prev, ...body.messages]);
+
+      // Large contracts draft one section per turn (see chatEngine.ts) - keep
+      // continuing automatically, no lawyer input needed, until either a
+      // final section lands or the AI stops for some other reason. Each
+      // section message already renders as its own chat bubble, so this loop
+      // doubles as live progress instead of a fake spinner.
+      const MAX_SECTIONS = 60; // safety cap against a runaway loop that never finalizes
+      let lastMsg = body.messages[body.messages.length - 1];
+      let sectionCount = 0;
+      while ((lastMsg?.tool_call as { type?: string; is_final_section?: boolean } | null)?.type === "submit_draft_section" &&
+        (lastMsg.tool_call as { is_final_section: boolean }).is_final_section === false) {
+        if (++sectionCount > MAX_SECTIONS) {
+          setError("הטיוטה כוללת חלקים רבים מהצפוי ועצרנו כדי לא להסתחרר - אפשר לשלוח הודעה כדי להמשיך, או לפנות לתמיכה.");
+          break;
+        }
+        const contRes = await fetch(`/api/contracts/${contractId}/continue-draft`, {
+          method: "POST",
+          signal: controller.signal,
+        });
+        if (!contRes.ok) {
+          const b = await contRes.json().catch(() => ({}));
+          setError(b.error ?? "שגיאה בהמשך הכנת הטיוטה");
+          break;
+        }
+        body = await contRes.json();
+        setMessages((prev) => [...prev, ...body.messages]);
+        lastMsg = body.messages[body.messages.length - 1];
+      }
+
       router.refresh(); // picks up new contract_files / status shown outside this component
     } catch (err) {
       if ((err as Error).name !== "AbortError") {

@@ -14,16 +14,36 @@ interface ChatMessageRow {
   created_at: string;
 }
 
+interface DraftSectionToolCall {
+  type: "submit_draft_section";
+  section_title: string | null;
+  nodes: unknown[];
+  is_final_section: boolean;
+  filled_fields: Record<string, unknown> | null;
+  open_issues: string[] | null;
+}
+
 /**
  * Runs one AI turn for a contract's chat: builds context from the environment's
  * template/guidelines/learned rules + full chat history, calls Claude, and
- * persists whatever it produces (a clarifying question, a rendered draft, or a
- * proposed guideline update). See plan §"AI Drafting, Chat & Learning Loop".
+ * persists whatever it produces (a clarifying question, one section of a draft,
+ * a completed draft, or a proposed guideline update). See plan §"AI Drafting,
+ * Chat & Learning Loop".
  *
  * Simplification vs. the plan: tool calls are summarized into plain assistant
  * text for history replay rather than replayed as literal tool_use/tool_result
  * blocks - each turn is a fresh decision informed by the full text history and
  * current contract state, not a strict multi-turn tool-use conversation.
+ *
+ * Drafting is section-by-section (see submit_draft_section in lib/ai/tools.ts)
+ * rather than one giant call for the whole document: a real multi-page
+ * contract's full node tree can need far more tokens and wall-clock time than
+ * is safe for a single request, which previously failed silently (truncated
+ * output, or the request just timing out) with no error and no draft. Each
+ * turn produces at most the sections the model can comfortably fit in one
+ * response; the caller (the chat route, then the continue-draft route) keeps
+ * calling this function turn after turn - with no lawyer input needed - until
+ * a final section arrives and the accumulated sections are rendered together.
  */
 export async function runChatTurn(
   admin: SupabaseClient,
@@ -67,6 +87,13 @@ export async function runChatTurn(
     .eq("chat_id", chat.id)
     .order("created_at", { ascending: true });
 
+  // Everything submitted so far in the CURRENT (not yet finalized) drafting
+  // pass, so a continuation turn can see the actual document it has already
+  // written - not just a one-line label - and keep the whole thing coherent
+  // (consistent terms, no duplicated or contradicted sections) no matter how
+  // many turns the full draft takes.
+  const pendingSections = extractPendingSections(history ?? []);
+
   const systemPrompt = buildDraftingSystemPrompt({
     environmentName: environment.name as string,
     guidelinesText: guidelinesFile?.extracted_text ?? null,
@@ -74,6 +101,7 @@ export async function runChatTurn(
     learnedRules: learnedRules ?? [],
     extractedFields: (contract.extracted_fields as Record<string, unknown>) ?? {},
     missingFields: (contract.missing_fields as { field_key: string; reason: string }[]) ?? [],
+    draftInProgress: pendingSections.nodes.length > 0 ? pendingSections : undefined,
   });
 
   const attachmentIds = Array.from(
@@ -104,12 +132,25 @@ export async function runChatTurn(
     });
 
   // Claude's Messages API requires the conversation to end on a user turn.
-  // This is empty on the very first turn, and can also legitimately end on
-  // an assistant message when intake had nothing missing and this is called
-  // right after the seed message with no lawyer reply yet - both cases need
-  // a synthetic nudge appended.
+  // This is empty on the very first turn, and can also legitimately end on an
+  // assistant message either right after intake's seed message (no lawyer
+  // reply yet) or mid-way through a multi-section draft (the previous turn
+  // submitted a non-final section and needs to continue) - the nudge differs
+  // so the model doesn't restart or repeat sections.
+  const lastHistoryMsg = history?.[history.length - 1];
+  const lastToolCall = lastHistoryMsg?.tool_call as DraftSectionToolCall | null | undefined;
+  const isContinuingSection =
+    lastHistoryMsg?.role === "assistant" &&
+    lastToolCall?.type === "submit_draft_section" &&
+    lastToolCall.is_final_section === false;
+
   if (messages.length === 0 || messages[messages.length - 1].role === "assistant") {
-    messages.push({ role: "user", content: "(No lawyer message yet - decide whether to ask a clarifying question or, if you already have everything you need, draft the contract now.)" });
+    messages.push({
+      role: "user",
+      content: isContinuingSection
+        ? "(Continue drafting - review the DRAFT SO FAR above, then submit the next section via submit_draft_section. Do not repeat or re-cover anything already there.)"
+        : "(No lawyer message yet - decide whether to ask a clarifying question or, if you already have everything you need, draft the contract now.)",
+    });
   }
 
   // Mark the contract as actively AI-processing for the duration of the Claude
@@ -126,16 +167,12 @@ export async function runChatTurn(
   const claude = createClaudeClient();
   let response;
   try {
-    // A full contract's node tree (submit_draft's payload) can run well past
-    // 8192 tokens for a real multi-page agreement - that silently truncated
-    // the tool call with no error and no visible reply, leaving the contract
-    // stuck forever. Streaming is required once max_tokens is raised this
-    // high (see claude-api skill); .finalMessage() still gives back the same
-    // aggregated Message shape the rest of this function expects.
+    // Each turn produces at most a few sections, not the whole document, so
+    // this only needs enough budget for that - see submit_draft_section.
     const stream = claude.messages.stream(
       {
         model: DRAFTING_MODEL,
-        max_tokens: 128000,
+        max_tokens: 16000,
         system: systemPrompt,
         tools: CHAT_TOOLS,
         tool_choice: { type: "auto" },
@@ -163,16 +200,16 @@ export async function runChatTurn(
   });
 
   if (response.stop_reason === "max_tokens") {
-    // Even the model's full 128K output budget wasn't enough - surface this to the lawyer instead of
-    // silently dropping the turn (the original bug: no message, no draft,
-    // status quietly reset to "awaiting_info" as if nothing happened).
+    // Even one section's budget wasn't enough - surface this to the lawyer
+    // instead of silently dropping the turn (the original bug: no message,
+    // no draft, status quietly reset to "awaiting_info" as if nothing happened).
     const { data: row, error } = await admin
       .from("contract_chat_messages")
       .insert({
         chat_id: chat.id,
         org_id: contract.org_id,
         role: "assistant",
-        content: "התגובה הייתה ארוכה מדי ונקטעה באמצע - לא הופקה טיוטה. כדאי לנסות לפצל את הבקשה (למשל לבקש קודם רק חלק מהסעיפים), או לפנות לתמיכה אם זה חוזר על עצמו.",
+        content: "התגובה הייתה ארוכה מדי ונקטעה באמצע - לא הופק חלק מהטיוטה. כדאי לנסות שוב, או לפנות לתמיכה אם זה חוזר על עצמו.",
       })
       .select("*")
       .single();
@@ -197,16 +234,25 @@ export async function runChatTurn(
     newMessages.push(row);
   }
 
+  // True while a non-final section landed this turn - more turns are needed
+  // to finish the draft, with no lawyer input required, so the "hand it back
+  // to the lawyer" fallback below must not fire.
+  let sectionInProgress = false;
+
   for (const block of response.content) {
     if (block.type !== "tool_use") continue;
 
-    if (block.name === "submit_draft") {
-      const msg = await handleSubmitDraft(admin, contract, environment, templateFile, block.input as {
+    if (block.name === "submit_draft_section") {
+      const input = block.input as {
+        section_title?: string;
         nodes: unknown[];
+        is_final_section: boolean;
         filled_fields?: Record<string, unknown>;
         open_issues?: string[];
-      });
-      newMessages.push(msg);
+      };
+      const rows = await handleSubmitDraftSection(admin, contract, environment, templateFile, chat.id, input);
+      newMessages.push(...rows);
+      if (!input.is_final_section) sectionInProgress = true;
     } else if (block.name === "propose_guideline_update") {
       const msg = await handleProposeGuidelineUpdate(admin, contract, environment, block.input as {
         topic: string;
@@ -218,34 +264,103 @@ export async function runChatTurn(
   }
 
   // If nothing in this turn moved the contract off the "AI is working" status
-  // we set above (a clarifying question, a guideline proposal alone, or
-  // submit_draft failing because there's no template yet), hand it back to
-  // the lawyer rather than leaving the badge stuck mid-processing.
-  const { data: currentContract } = await admin.from("contracts").select("status").eq("id", contractId).single();
-  if (currentContract?.status === activeStatus) {
-    await admin
-      .from("contracts")
-      .update({ status: "awaiting_info", updated_at: new Date().toISOString() })
-      .eq("id", contractId);
+  // we set above (a clarifying question, a guideline proposal alone, or a
+  // final section failing because there's no template yet) AND a multi-turn
+  // draft isn't mid-flight, hand it back to the lawyer rather than leaving
+  // the badge stuck mid-processing.
+  if (!sectionInProgress) {
+    const { data: currentContract } = await admin.from("contracts").select("status").eq("id", contractId).single();
+    if (currentContract?.status === activeStatus) {
+      await admin
+        .from("contracts")
+        .update({ status: "awaiting_info", updated_at: new Date().toISOString() })
+        .eq("id", contractId);
+    }
   }
 
   return newMessages;
 }
 
-async function handleSubmitDraft(
+/** All submit_draft_section calls since the last completed draft, in submission order - pure function over already-loaded rows. */
+function extractPendingSections(
+  rows: { tool_call: unknown }[],
+): { nodes: unknown[]; filled_fields: Record<string, unknown>; open_issues: string[] } {
+  const sectionCalls = rows
+    .map((m) => m.tool_call as DraftSectionToolCall | null)
+    .filter((tc): tc is DraftSectionToolCall => tc?.type === "submit_draft_section");
+  const lastFinalIdx = sectionCalls.map((tc) => tc.is_final_section).lastIndexOf(true);
+  const pending = lastFinalIdx === -1 ? sectionCalls : sectionCalls.slice(lastFinalIdx + 1);
+
+  return {
+    nodes: pending.flatMap((tc) => tc.nodes ?? []),
+    filled_fields: Object.assign({}, ...pending.map((tc) => tc.filled_fields ?? {})),
+    open_issues: pending.flatMap((tc) => tc.open_issues ?? []),
+  };
+}
+
+/** Same as extractPendingSections, but re-fetches fresh - used right after inserting the final section itself. */
+async function collectPendingSections(
+  admin: SupabaseClient,
+  chatId: string,
+): Promise<{ nodes: unknown[]; filled_fields: Record<string, unknown>; open_issues: string[] }> {
+  const { data: msgs } = await admin
+    .from("contract_chat_messages")
+    .select("tool_call, created_at")
+    .eq("chat_id", chatId)
+    .order("created_at", { ascending: true });
+  return extractPendingSections(msgs ?? []);
+}
+
+async function handleSubmitDraftSection(
   admin: SupabaseClient,
   contract: Record<string, unknown>,
   environment: Record<string, unknown>,
   templateFile: Record<string, unknown> | null | undefined,
-  input: { nodes: unknown[]; filled_fields?: Record<string, unknown>; open_issues?: string[] },
-): Promise<ChatMessageRow> {
-  const { data: chat } = await admin.from("contract_chats").select("id").eq("contract_id", contract.id).single();
+  chatId: string,
+  input: { section_title?: string; nodes: unknown[]; is_final_section: boolean; filled_fields?: Record<string, unknown>; open_issues?: string[] },
+): Promise<ChatMessageRow[]> {
+  const { data: sectionRow, error: sectionError } = await admin
+    .from("contract_chat_messages")
+    .insert({
+      chat_id: chatId,
+      org_id: contract.org_id,
+      role: "assistant",
+      content: input.is_final_section
+        ? `הכנתי את החלק האחרון${input.section_title ? ` (${input.section_title})` : ""}. מרכיבה את הטיוטה המלאה...`
+        : `הכנתי חלק${input.section_title ? `: ${input.section_title}` : ""}. ממשיכה לחלק הבא...`,
+      tool_call: {
+        type: "submit_draft_section",
+        section_title: input.section_title ?? null,
+        nodes: input.nodes,
+        is_final_section: input.is_final_section,
+        filled_fields: input.filled_fields ?? null,
+        open_issues: input.open_issues ?? null,
+      },
+    })
+    .select("*")
+    .single();
+  if (sectionError) throw new Error(sectionError.message);
 
+  if (!input.is_final_section) return [sectionRow];
+
+  const pending = await collectPendingSections(admin, chatId);
+  const finalRow = await finalizeDraft(admin, contract, environment, templateFile, chatId, pending);
+  return [sectionRow, finalRow];
+}
+
+async function finalizeDraft(
+  admin: SupabaseClient,
+  contract: Record<string, unknown>,
+  environment: Record<string, unknown>,
+  templateFile: Record<string, unknown> | null | undefined,
+  chatId: string,
+  sections: { nodes: unknown[]; filled_fields: Record<string, unknown>; open_issues: string[] },
+): Promise<ChatMessageRow> {
   if (!templateFile) {
     const { data: row } = await admin
       .from("contract_chat_messages")
       .insert({
-        chat_id: chat!.id,
+        chat_id: chatId,
         org_id: contract.org_id,
         role: "assistant",
         content: "לא נמצא קובץ תבנית בסביבת החוזה הזו - לא ניתן להפיק טיוטה בלי תבנית מקורית. יש להעלות תבנית תחילה.",
@@ -266,7 +381,7 @@ async function handleSubmitDraft(
   });
 
   const rendered = await renderDocument(templateBuffer, templateFile.original_filename as string, {
-    nodes: input.nodes,
+    nodes: sections.nodes,
   });
 
   const contractStorage = getContractStorageProvider(
@@ -298,14 +413,14 @@ async function handleSubmitDraft(
     .update({ status: "draft_ready", current_draft_version: nextVersion, updated_at: new Date().toISOString() })
     .eq("id", contract.id);
 
-  const issuesText = input.open_issues?.length
-    ? `\n\nנקודות לבדוק לפני שליחה:\n${input.open_issues.map((i) => `- ${i}`).join("\n")}`
+  const issuesText = sections.open_issues.length > 0
+    ? `\n\nנקודות לבדוק לפני שליחה:\n${sections.open_issues.map((i) => `- ${i}`).join("\n")}`
     : "";
 
   const { data: row, error } = await admin
     .from("contract_chat_messages")
     .insert({
-      chat_id: chat!.id,
+      chat_id: chatId,
       org_id: contract.org_id,
       role: "assistant",
       content: `הכנתי טיוטה (גרסה ${nextVersion}).${issuesText}`,

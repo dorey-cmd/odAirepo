@@ -3,6 +3,9 @@
   "functions": {
     "app/api/contracts/[id]/chat/route.ts": {
       "supportsCancellation": true
+    },
+    "app/api/contracts/[id]/continue-draft/route.ts": {
+      "supportsCancellation": true
     }
   }
 }
