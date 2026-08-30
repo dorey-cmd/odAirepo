@@ -57,6 +57,37 @@ export async function runChatTurn(
     .single();
   if (contractError || !contract) throw new Error(`Contract not found: ${contractError?.message}`);
 
+  // Claim an exclusive lock for the duration of this turn - without this, two
+  // overlapping calls (a double-submitted request, two open tabs, a client
+  // retry racing an in-flight call) each read the same "pending sections" and
+  // both write, producing interleaved duplicated content. A stale lock (a
+  // previous turn that crashed without releasing it) is reclaimable after 15
+  // minutes - well past any single section's realistic duration.
+  const LOCK_STALE_AFTER_MS = 15 * 60 * 1000;
+  const { data: claimed } = await admin
+    .from("contracts")
+    .update({ active_turn_started_at: new Date().toISOString() })
+    .eq("id", contractId)
+    .or(`active_turn_started_at.is.null,active_turn_started_at.lt.${new Date(Date.now() - LOCK_STALE_AFTER_MS).toISOString()}`)
+    .select("id")
+    .maybeSingle();
+  if (!claimed) {
+    throw new Error("ניסוח כבר מתבצע כרגע עבור חוזה זה - נסה שוב בעוד רגע.");
+  }
+
+  try {
+    return await runChatTurnLocked(admin, contract, contractId, signal);
+  } finally {
+    await admin.from("contracts").update({ active_turn_started_at: null }).eq("id", contractId);
+  }
+}
+
+async function runChatTurnLocked(
+  admin: SupabaseClient,
+  contract: Record<string, unknown>,
+  contractId: string,
+  signal?: AbortSignal,
+): Promise<ChatMessageRow[]> {
   const environment = contract.contract_environments as Record<string, unknown>;
 
   const { data: files } = await admin
@@ -91,8 +122,15 @@ export async function runChatTurn(
   // pass, so a continuation turn can see the actual document it has already
   // written - not just a one-line label - and keep the whole thing coherent
   // (consistent terms, no duplicated or contradicted sections) no matter how
-  // many turns the full draft takes.
-  const pendingSections = extractPendingSections(history ?? []);
+  // many turns the full draft takes. "Not yet finalized" is anchored to an
+  // actual rendered file existing (latestDraftFileAt), not to an
+  // is_final_section:true message - that flag can be recorded and then the
+  // render/upload step can still fail (see finalizeDraft's own try/catch),
+  // and treating the flag alone as proof of completion previously discarded
+  // every already-written section and restarted the whole document from
+  // scratch on the very next turn.
+  const latestDraftFileAt = await getLatestDraftFileCreatedAt(admin, contractId);
+  const pendingSections = extractPendingSections(history ?? [], latestDraftFileAt);
 
   const { static: staticSystemPrompt, dynamic: dynamicSystemPrompt } = buildDraftingSystemPrompt({
     environmentName: environment.name as string,
@@ -311,15 +349,28 @@ export async function runChatTurn(
   return newMessages;
 }
 
-/** All submit_draft_section calls since the last completed draft, in submission order - pure function over already-loaded rows. */
+/** Most recent successfully-rendered draft file's timestamp, or null if none exists yet - the ground truth for "already finalized." */
+async function getLatestDraftFileCreatedAt(admin: SupabaseClient, contractId: string): Promise<string | null> {
+  const { data } = await admin
+    .from("contract_files")
+    .select("created_at")
+    .eq("contract_id", contractId)
+    .eq("file_role", "draft_version")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return data?.created_at ?? null;
+}
+
+/** All submit_draft_section calls after the last successfully-rendered draft file, in submission order - pure function over already-loaded rows. */
 function extractPendingSections(
-  rows: { tool_call: unknown }[],
+  rows: { tool_call: unknown; created_at: string }[],
+  sinceTimestamp: string | null,
 ): { nodes: unknown[]; filled_fields: Record<string, unknown>; open_issues: string[] } {
-  const sectionCalls = rows
+  const pending = rows
+    .filter((m) => !sinceTimestamp || m.created_at > sinceTimestamp)
     .map((m) => m.tool_call as DraftSectionToolCall | null)
     .filter((tc): tc is DraftSectionToolCall => tc?.type === "submit_draft_section");
-  const lastFinalIdx = sectionCalls.map((tc) => tc.is_final_section).lastIndexOf(true);
-  const pending = lastFinalIdx === -1 ? sectionCalls : sectionCalls.slice(lastFinalIdx + 1);
 
   return {
     nodes: pending.flatMap((tc) => tc.nodes ?? []),
@@ -332,13 +383,13 @@ function extractPendingSections(
 async function collectPendingSections(
   admin: SupabaseClient,
   chatId: string,
+  contractId: string,
 ): Promise<{ nodes: unknown[]; filled_fields: Record<string, unknown>; open_issues: string[] }> {
-  const { data: msgs } = await admin
-    .from("contract_chat_messages")
-    .select("tool_call, created_at")
-    .eq("chat_id", chatId)
-    .order("created_at", { ascending: true });
-  return extractPendingSections(msgs ?? []);
+  const [{ data: msgs }, latestDraftFileAt] = await Promise.all([
+    admin.from("contract_chat_messages").select("tool_call, created_at").eq("chat_id", chatId).order("created_at", { ascending: true }),
+    getLatestDraftFileCreatedAt(admin, contractId),
+  ]);
+  return extractPendingSections(msgs ?? [], latestDraftFileAt);
 }
 
 async function handleSubmitDraftSection(
@@ -373,7 +424,7 @@ async function handleSubmitDraftSection(
 
   if (!input.is_final_section) return [sectionRow];
 
-  const pending = await collectPendingSections(admin, chatId);
+  const pending = await collectPendingSections(admin, chatId, contract.id as string);
   const finalRow = await finalizeDraft(admin, contract, environment, templateFile, chatId, pending);
   return [sectionRow, finalRow];
 }
@@ -400,66 +451,95 @@ async function finalizeDraft(
     return row;
   }
 
-  const envStorage = getEnvironmentStorageProvider(
-    { org_id: environment.org_id as string, storage_provider: environment.storage_provider as "supabase" | "google_drive" },
-    admin,
-  );
-  const templateBuffer = await envStorage.download({
-    provider: templateFile.storage_provider as "supabase" | "google_drive",
-    path: templateFile.storage_path as string,
-    driveFileId: templateFile.google_drive_file_id as string | undefined,
-  });
+  // The render/upload pipeline is real network/IO work (storage download,
+  // the document-render service, storage upload) that can fail independently
+  // of the AI call that already succeeded. Without this guard, a failure
+  // here used to propagate uncaught: no error message, no status change -
+  // the contract stayed stuck showing "drafting" forever with everything the
+  // AI produced looking like it vanished, even though nothing was lost (the
+  // sections themselves are already durably saved as chat messages, and
+  // extractPendingSections re-includes them on the next attempt precisely
+  // because no contract_files row - the actual proof of success - exists).
+  try {
+    const envStorage = getEnvironmentStorageProvider(
+      { org_id: environment.org_id as string, storage_provider: environment.storage_provider as "supabase" | "google_drive" },
+      admin,
+    );
+    const templateBuffer = await envStorage.download({
+      provider: templateFile.storage_provider as "supabase" | "google_drive",
+      path: templateFile.storage_path as string,
+      driveFileId: templateFile.google_drive_file_id as string | undefined,
+    });
 
-  const rendered = await renderDocument(templateBuffer, templateFile.original_filename as string, {
-    nodes: sections.nodes,
-  });
+    const rendered = await renderDocument(templateBuffer, templateFile.original_filename as string, {
+      nodes: sections.nodes,
+    });
 
-  const contractStorage = getContractStorageProvider(
-    { org_id: environment.org_id as string, storage_provider: environment.storage_provider as "supabase" | "google_drive" },
-    admin,
-  );
-  const nextVersion = ((contract.current_draft_version as number) ?? 0) + 1;
-  const ref = await contractStorage.upload(environment.org_id as string, contract.id as string, {
-    buffer: rendered,
-    filename: `draft-v${nextVersion}.docx`,
-    mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  });
+    const contractStorage = getContractStorageProvider(
+      { org_id: environment.org_id as string, storage_provider: environment.storage_provider as "supabase" | "google_drive" },
+      admin,
+    );
+    const nextVersion = ((contract.current_draft_version as number) ?? 0) + 1;
+    const ref = await contractStorage.upload(environment.org_id as string, contract.id as string, {
+      buffer: rendered,
+      filename: `draft-v${nextVersion}.docx`,
+      mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
 
-  await admin.from("contract_files").insert({
-    contract_id: contract.id,
-    org_id: contract.org_id,
-    file_role: "draft_version",
-    storage_provider: ref.provider,
-    storage_path: ref.path,
-    google_drive_file_id: ref.driveFileId ?? null,
-    original_filename: `draft-v${nextVersion}.docx`,
-    mime_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    size_bytes: rendered.byteLength,
-    version: nextVersion,
-  });
-
-  await admin
-    .from("contracts")
-    .update({ status: "draft_ready", current_draft_version: nextVersion, updated_at: new Date().toISOString() })
-    .eq("id", contract.id);
-
-  const issuesText = sections.open_issues.length > 0
-    ? `\n\nנקודות לבדוק לפני שליחה:\n${sections.open_issues.map((i) => `- ${i}`).join("\n")}`
-    : "";
-
-  const { data: row, error } = await admin
-    .from("contract_chat_messages")
-    .insert({
-      chat_id: chatId,
+    await admin.from("contract_files").insert({
+      contract_id: contract.id,
       org_id: contract.org_id,
-      role: "assistant",
-      content: `הכנתי טיוטה (גרסה ${nextVersion}).${issuesText}`,
-      tool_call: { type: "submit_draft", version: nextVersion, storage_path: ref.path },
-    })
-    .select("*")
-    .single();
-  if (error) throw new Error(error.message);
-  return row;
+      file_role: "draft_version",
+      storage_provider: ref.provider,
+      storage_path: ref.path,
+      google_drive_file_id: ref.driveFileId ?? null,
+      original_filename: `draft-v${nextVersion}.docx`,
+      mime_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      size_bytes: rendered.byteLength,
+      version: nextVersion,
+    });
+
+    await admin
+      .from("contracts")
+      .update({ status: "draft_ready", current_draft_version: nextVersion, updated_at: new Date().toISOString() })
+      .eq("id", contract.id);
+
+    const issuesText = sections.open_issues.length > 0
+      ? `\n\nנקודות לבדוק לפני שליחה:\n${sections.open_issues.map((i) => `- ${i}`).join("\n")}`
+      : "";
+
+    const { data: row, error } = await admin
+      .from("contract_chat_messages")
+      .insert({
+        chat_id: chatId,
+        org_id: contract.org_id,
+        role: "assistant",
+        content: `הכנתי טיוטה (גרסה ${nextVersion}).${issuesText}`,
+        tool_call: { type: "submit_draft", version: nextVersion, storage_path: ref.path },
+      })
+      .select("*")
+      .single();
+    if (error) throw new Error(error.message);
+    return row;
+  } catch (err) {
+    console.error(`finalizeDraft failed for contract ${contract.id}:`, err);
+    await admin
+      .from("contracts")
+      .update({ status: "error", updated_at: new Date().toISOString() })
+      .eq("id", contract.id);
+    const { data: row, error } = await admin
+      .from("contract_chat_messages")
+      .insert({
+        chat_id: chatId,
+        org_id: contract.org_id,
+        role: "assistant",
+        content: "אירעה שגיאה בעת הרכבת הטיוטה הסופית מהחלקים שהוכנו - שום דבר לא הלך לאיבוד, כל החלקים נשמרו. אפשר לנסות שוב (למשל לשלוח כל הודעה), וההרכבה תמשיך מאיפה שנעצרה.",
+      })
+      .select("*")
+      .single();
+    if (error) throw new Error(error.message);
+    return row;
+  }
 }
 
 async function handleProposeGuidelineUpdate(
