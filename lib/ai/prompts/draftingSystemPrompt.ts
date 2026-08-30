@@ -10,10 +10,19 @@ interface DraftingPromptInput {
   draftInProgress?: { nodes: unknown[]; filled_fields: Record<string, unknown>; open_issues: string[] };
 }
 
-export function buildDraftingSystemPrompt(input: DraftingPromptInput): string {
-  const sections: string[] = [];
+/**
+ * Split in two so the caller (chatEngine.ts) can mark only `static` with a
+ * prompt-cache breakpoint: it's identical across every turn of a contract's
+ * whole drafting pass (same guidelines, style catalog, intake fields), while
+ * `dynamic` grows or changes every turn and would never get a cache hit
+ * anyway - caching it would only add the write premium for nothing. This is
+ * a pure cost optimization: the model sees exactly the same content either
+ * way, just billed once instead of on every turn.
+ */
+export function buildDraftingSystemPrompt(input: DraftingPromptInput): { static: string; dynamic: string | null } {
+  const staticSections: string[] = [];
 
-  sections.push(
+  staticSections.push(
     `You are drafting a contract for a lawyer inside the Contract Environment "${input.environmentName}". ` +
       `You are talking to the LAWYER, not the end client - they are your only audience in this chat. ` +
       `Your job: (1) ask about anything required that's missing or ambiguous, one focused question at a ` +
@@ -40,35 +49,37 @@ export function buildDraftingSystemPrompt(input: DraftingPromptInput): string {
   );
 
   if (input.styleCatalog) {
-    sections.push(
+    staticSections.push(
       `TEMPLATE STYLE CATALOG (submit_draft_section must only reference style_name/numId/ilvl values found ` +
         `here - never invent new ones):\n${JSON.stringify(input.styleCatalog, null, 2)}`,
     );
   }
 
   if (input.guidelinesText) {
-    sections.push(`GUIDELINES (how this lawyer wants this type of contract drafted):\n${input.guidelinesText}`);
+    staticSections.push(`GUIDELINES (how this lawyer wants this type of contract drafted):\n${input.guidelinesText}`);
   }
 
   if (input.learnedRules.length > 0) {
-    sections.push(
+    staticSections.push(
       `LEARNED RULES (accepted from previous contracts in this environment - treat as part of the ` +
         `guidelines):\n${input.learnedRules.map((r) => `- [${r.topic ?? "general"}] ${r.rule_text}`).join("\n")}`,
     );
   }
 
-  sections.push(`EXTRACTED INTAKE FIELDS:\n${JSON.stringify(input.extractedFields, null, 2)}`);
+  staticSections.push(`EXTRACTED INTAKE FIELDS:\n${JSON.stringify(input.extractedFields, null, 2)}`);
 
   if (input.missingFields.length > 0) {
-    sections.push(
+    staticSections.push(
       `FIELDS STILL MISSING OR AMBIGUOUS:\n${input.missingFields
         .map((f) => `- ${f.field_key}: ${f.reason}`)
         .join("\n")}`,
     );
   }
 
+  const dynamicSections: string[] = [];
+
   if (input.draftInProgress) {
-    sections.push(
+    dynamicSections.push(
       `DRAFT SO FAR (sections you have already submitted THIS drafting pass, in order - this is the actual content, ` +
         `not a summary. Review it for consistency - matching terminology, defined terms, numbering, no duplicated or ` +
         `contradicted content - before adding the next section. The final document will be exactly this plus whatever ` +
@@ -79,11 +90,14 @@ export function buildDraftingSystemPrompt(input: DraftingPromptInput): string {
   }
 
   if (input.currentDraftNodes) {
-    sections.push(
+    dynamicSections.push(
       `CURRENT DRAFT (from a previous submit_draft call - the lawyer may be asking for revisions to this):\n` +
         JSON.stringify(input.currentDraftNodes, null, 2),
     );
   }
 
-  return sections.join("\n\n");
+  return {
+    static: staticSections.join("\n\n"),
+    dynamic: dynamicSections.length > 0 ? dynamicSections.join("\n\n") : null,
+  };
 }

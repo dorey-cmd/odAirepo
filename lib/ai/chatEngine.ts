@@ -94,7 +94,7 @@ export async function runChatTurn(
   // many turns the full draft takes.
   const pendingSections = extractPendingSections(history ?? []);
 
-  const systemPrompt = buildDraftingSystemPrompt({
+  const { static: staticSystemPrompt, dynamic: dynamicSystemPrompt } = buildDraftingSystemPrompt({
     environmentName: environment.name as string,
     guidelinesText: guidelinesFile?.extracted_text ?? null,
     styleCatalog: templateFile?.extracted_style_catalog ?? null,
@@ -103,6 +103,19 @@ export async function runChatTurn(
     missingFields: (contract.missing_fields as { field_key: string; reason: string }[]) ?? [],
     draftInProgress: pendingSections.nodes.length > 0 ? pendingSections : undefined,
   });
+
+  // Cost optimization, no quality impact: the model sees the exact same
+  // content either way. `staticSystemPrompt` (guidelines, style catalog,
+  // instructions) is identical across every turn of a contract's whole
+  // drafting pass, so marking it as a cache breakpoint means only the FIRST
+  // turn pays full price for it - every later turn reads it at ~10% cost.
+  // `dynamicSystemPrompt` (the ever-growing draft-so-far) changes every turn
+  // and would never get a cache hit, so it's deliberately left uncached -
+  // marking it would only add the write premium for nothing.
+  const systemBlocks = [
+    { type: "text" as const, text: staticSystemPrompt, cache_control: { type: "ephemeral" as const } },
+    ...(dynamicSystemPrompt ? [{ type: "text" as const, text: dynamicSystemPrompt }] : []),
+  ];
 
   const attachmentIds = Array.from(
     new Set((history ?? []).flatMap((m) => (m.attachment_file_ids as string[] | null) ?? [])),
@@ -164,6 +177,18 @@ export async function runChatTurn(
     .update({ status: activeStatus, updated_at: new Date().toISOString() })
     .eq("id", contractId);
 
+  // Same cost-optimization idea applied to the conversation history: it only
+  // ever grows by 1-2 messages per turn, so marking the LAST message as a
+  // cache breakpoint lets Claude's cache lookup find the previous turn's
+  // (shorter) cached prefix and only bill full price for what's new -
+  // without this, the entire growing history was resent at full price on
+  // every single turn.
+  const cachedMessages = messages.map((m, i) =>
+    i === messages.length - 1
+      ? { role: m.role, content: [{ type: "text" as const, text: m.content, cache_control: { type: "ephemeral" as const } }] }
+      : m,
+  );
+
   const claude = createClaudeClient();
   let response;
   try {
@@ -173,10 +198,10 @@ export async function runChatTurn(
       {
         model: DRAFTING_MODEL,
         max_tokens: 16000,
-        system: systemPrompt,
+        system: systemBlocks,
         tools: CHAT_TOOLS,
         tool_choice: { type: "auto" },
-        messages,
+        messages: cachedMessages,
       },
       { signal },
     );
@@ -196,7 +221,12 @@ export async function runChatTurn(
     contractId: contract.id as string,
     purpose: "chat_turn",
     model: DRAFTING_MODEL,
-    usage: { input_tokens: response.usage.input_tokens, output_tokens: response.usage.output_tokens },
+    usage: {
+      input_tokens: response.usage.input_tokens,
+      output_tokens: response.usage.output_tokens,
+      cache_creation_input_tokens: response.usage.cache_creation_input_tokens,
+      cache_read_input_tokens: response.usage.cache_read_input_tokens,
+    },
   });
 
   if (response.stop_reason === "max_tokens") {
