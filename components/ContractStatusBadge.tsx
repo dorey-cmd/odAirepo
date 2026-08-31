@@ -1,10 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ContractStatus } from "@/types/contract";
 import { LIVE_PROCESSING_STATUSES, NON_TERMINAL_STATUSES, STATUS_LABELS, statusVariant } from "@/lib/contracts/statusLabels";
 
 const POLL_MS = 4000;
+// Even a "terminal" status (draft_ready, awaiting_info, ...) can go stale: a
+// new message sent from another tab/session can flip it to "revising"
+// without this component ever knowing, since that decision used to only get
+// made once at mount based on the initial status - a badge that loaded while
+// "draft_ready" would then never poll again, silently hiding an actually
+// stuck turn indefinitely. Polling slowly even at rest keeps it truthful.
+const IDLE_POLL_MS = 30000;
 
 export default function ContractStatusBadge({
   contractId,
@@ -17,27 +24,35 @@ export default function ContractStatusBadge({
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [detail, setDetail] = useState<string | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const statusRef = useRef(status);
+  statusRef.current = status;
 
   useEffect(() => {
-    if (!NON_TERMINAL_STATUSES.includes(status)) return;
-
     let cancelled = false;
-    const interval = setInterval(async () => {
+    let timeoutId: ReturnType<typeof setTimeout>;
+
+    async function tick() {
       try {
         const res = await fetch(`/api/contracts/${contractId}/status`);
-        if (!res.ok || cancelled) return;
-        const data = await res.json();
-        if (!cancelled) setStatus(data.status);
+        if (res.ok && !cancelled) {
+          const data = await res.json();
+          setStatus(data.status);
+          statusRef.current = data.status;
+        }
       } catch {
         // transient network hiccup - next tick retries, nothing to show the lawyer
       }
-    }, POLL_MS);
+      if (!cancelled) {
+        timeoutId = setTimeout(tick, NON_TERMINAL_STATUSES.includes(statusRef.current) ? POLL_MS : IDLE_POLL_MS);
+      }
+    }
 
+    timeoutId = setTimeout(tick, NON_TERMINAL_STATUSES.includes(statusRef.current) ? POLL_MS : IDLE_POLL_MS);
     return () => {
       cancelled = true;
-      clearInterval(interval);
+      clearTimeout(timeoutId);
     };
-  }, [contractId, status]);
+  }, [contractId]);
 
   const variant = statusVariant(status);
   const isLive = LIVE_PROCESSING_STATUSES.includes(status);
