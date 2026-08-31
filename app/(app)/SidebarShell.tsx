@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { LayoutDashboard, FolderKanban, FileText, HardDrive, ShieldCheck, Menu, X } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { LayoutDashboard, FolderKanban, FileText, HardDrive, ShieldCheck, Menu, X, UserCog } from "lucide-react";
 import Logo from "@/components/Logo";
 import NavLink from "./NavLink";
 import SignOutButton from "./SignOutButton";
@@ -9,13 +10,30 @@ import SignOutButton from "./SignOutButton";
 export default function SidebarShell({
   userEmail,
   isAdmin,
+  viewAsAdminEmail,
   children,
 }: {
   userEmail: string;
   isAdmin: boolean;
+  /** Set when a platform admin is currently viewing-as this account - the real admin's email, for the banner. */
+  viewAsAdminEmail: string | null;
   children: React.ReactNode;
 }) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [exiting, setExiting] = useState(false);
+
+  async function exitViewAs() {
+    setExiting(true);
+    try {
+      const res = await fetch("/api/admin/exit-view-as", { method: "POST" });
+      if (!res.ok) throw new Error();
+      router.push("/admin/view-as");
+      router.refresh();
+    } finally {
+      setExiting(false);
+    }
+  }
 
   const nav = (
     <aside
@@ -43,6 +61,7 @@ export default function SidebarShell({
         <NavLink href="/contracts" label="חוזים" icon={FileText} />
         <NavLink href="/settings/google-drive" label="Google Drive" icon={HardDrive} />
         {isAdmin && <NavLink href="/admin" label="ניהול מערכת" icon={ShieldCheck} />}
+        {isAdmin && <NavLink href="/admin/view-as" label="View As" icon={UserCog} />}
       </nav>
 
       <div
@@ -67,6 +86,30 @@ export default function SidebarShell({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+      {viewAsAdminEmail && (
+        <div
+          style={{
+            background: "var(--gold)",
+            color: "var(--navy-ink)",
+            padding: "0.5rem 1.5rem",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "0.75rem",
+            fontSize: "0.85rem",
+            fontWeight: 600,
+            flexWrap: "wrap",
+          }}
+        >
+          <UserCog size={16} />
+          <span>
+            צופה כ-{userEmail} (Admin: {viewAsAdminEmail})
+          </span>
+          <button className="ghost" style={{ padding: "0.15rem 0.6rem", color: "var(--navy-ink)" }} onClick={exitViewAs} disabled={exiting}>
+            {exiting ? "חוזר..." : "חזרה לעצמי"}
+          </button>
+        </div>
+      )}
       <header className="brand-strip">
         <button className="app-hamburger-btn ghost" onClick={() => setOpen(true)}>
           <Menu size={22} />

@@ -72,9 +72,12 @@ export default async function AdminPage() {
 
   return (
     <div className="stack">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: "0.5rem" }}>
         <h1>ניהול מערכת</h1>
-        <Link href="/admin/contracts">כל החוזים בכל הארגונים ←</Link>
+        <div style={{ display: "flex", gap: "1rem" }}>
+          <Link href="/admin/view-as">View As ←</Link>
+          <Link href="/admin/contracts">כל החוזים בכל הארגונים ←</Link>
+        </div>
       </div>
 
       <div className="card stack">

@@ -29,6 +29,8 @@ export interface ContractChatMessage {
   content: string | null;
   tool_call: Record<string, unknown> | null;
   attachment_file_ids: string[];
+  /** Set when a platform admin sent this message via View As - see lib/admin/viewAs.ts. */
+  impersonated_by: string | null;
   created_at: string;
 }
 

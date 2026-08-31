@@ -100,6 +100,7 @@ export default function ContractChat({
     const optimistic: ContractChatMessage = {
       id: `optimistic-${Date.now()}`,
       chat_id: "",
+      impersonated_by: null,
       role: "lawyer",
       content: input,
       tool_call: null,
@@ -277,6 +278,9 @@ export default function ContractChat({
             }}
           >
             {m.content}
+            {m.impersonated_by && (
+              <div style={{ fontSize: "0.72rem", opacity: 0.75, marginTop: "0.3rem" }}>נשלח באמצעות View As</div>
+            )}
             {m.attachment_file_ids.length > 0 && (
               <div style={{ display: "flex", gap: "0.4rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
                 {m.attachment_file_ids.map((id) => (

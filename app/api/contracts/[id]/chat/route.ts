@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { runChatTurn } from "@/lib/ai/chatEngine";
 import { translateAiError } from "@/lib/ai/errorMessages";
+import { VIEW_AS_STASH_COOKIE, type ViewAsStash } from "@/lib/admin/viewAs";
 
 export async function GET(_req: Request, context: { params: Promise<{ id: string }> }) {
   const { id: contractId } = await context.params;
@@ -55,12 +57,27 @@ export async function POST(req: Request, context: { params: Promise<{ id: string
     .single();
   if (chatError || !chat) return NextResponse.json({ error: "Chat not found" }, { status: 404 });
 
+  // If a platform admin is currently viewing-as this user (see
+  // /admin/view-as), the DB session genuinely is this user - RLS and every
+  // other feature just work - but the audit trail should still show who was
+  // really behind the wheel, not just "the lawyer sent this."
+  const stashRaw = (await cookies()).get(VIEW_AS_STASH_COOKIE)?.value;
+  let impersonatedBy: string | null = null;
+  if (stashRaw) {
+    try {
+      impersonatedBy = (JSON.parse(stashRaw) as ViewAsStash).adminUserId;
+    } catch {
+      // malformed stash - treat as not impersonating
+    }
+  }
+
   const { error: insertError } = await supabase.from("contract_chat_messages").insert({
     chat_id: chat.id,
     org_id: contract.org_id,
     role: "lawyer",
     content: body.message,
     attachment_file_ids: attachmentFileIds,
+    impersonated_by: impersonatedBy,
   });
   if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 });
 
