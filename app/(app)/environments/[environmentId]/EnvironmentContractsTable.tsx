@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowUpDown } from "lucide-react";
 import ContractStatusBadge from "@/components/ContractStatusBadge";
+import ContractActionsMenu from "@/components/ContractActionsMenu";
 import type { Contract } from "@/types/contract";
 
 type SortKey = "title" | "updated_at" | "status";
@@ -63,6 +64,7 @@ export default function EnvironmentContractsTable({ contracts }: { contracts: Co
               <SortHeader label="שם החוזה" sortKeyValue="title" />
               <SortHeader label="סטטוס" sortKeyValue="status" />
               <SortHeader label="עודכן לאחרונה" sortKeyValue="updated_at" />
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -75,6 +77,9 @@ export default function EnvironmentContractsTable({ contracts }: { contracts: Co
                   <ContractStatusBadge contractId={c.id} initialStatus={c.status} />
                 </td>
                 <td>{new Date(c.updated_at).toLocaleString("he-IL")}</td>
+                <td>
+                  <ContractActionsMenu contractId={c.id} isArchived={c.status === "archived"} />
+                </td>
               </tr>
             ))}
           </tbody>

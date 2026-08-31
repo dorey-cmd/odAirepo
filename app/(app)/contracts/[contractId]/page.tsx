@@ -5,6 +5,7 @@ import { isPlatformAdmin } from "@/lib/db/queries/admin";
 import { getContract, listContractFiles } from "@/lib/db/queries/contracts";
 import ContractChat from "./ContractChat";
 import ContractStatusBadge from "@/components/ContractStatusBadge";
+import ContractActionsMenu from "@/components/ContractActionsMenu";
 
 export default async function ContractDetailPage({
   params,
@@ -47,7 +48,10 @@ export default async function ContractDetailPage({
     <div className="stack">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
         <h1>{contract.title}</h1>
-        <ContractStatusBadge contractId={contractId} initialStatus={contract.status} />
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <ContractStatusBadge contractId={contractId} initialStatus={contract.status} />
+          <ContractActionsMenu contractId={contractId} isArchived={contract.status === "archived"} redirectTo="/contracts" />
+        </div>
       </div>
       <p style={{ color: "var(--text-muted)", marginTop: -12 }}>{contract.contract_environments?.name}</p>
 

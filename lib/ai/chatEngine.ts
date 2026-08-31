@@ -5,6 +5,7 @@ import { CHAT_TOOLS } from "@/lib/ai/tools";
 import { logAiUsage } from "@/lib/ai/usageLog";
 import { getContractStorageProvider, getEnvironmentStorageProvider } from "@/lib/storage/factory";
 import { renderDocument } from "@/lib/rendering/documentRenderClient";
+import { translateAiError } from "@/lib/ai/errorMessages";
 
 interface ChatMessageRow {
   id: string;
@@ -245,12 +246,30 @@ async function runChatTurnLocked(
     );
     response = await stream.finalMessage();
   } catch (err) {
-    // Cancelled by the lawyer - revert to whatever was true before this turn
-    // rather than leaving the badge stuck showing "AI is working".
-    await admin
-      .from("contracts")
-      .update({ status: signal?.aborted ? previousStatus : "error", updated_at: new Date().toISOString() })
-      .eq("id", contractId);
+    if (signal?.aborted) {
+      // Cancelled by the lawyer - revert to whatever was true before this
+      // turn rather than leaving the badge stuck showing "AI is working".
+      await admin
+        .from("contracts")
+        .update({ status: previousStatus, updated_at: new Date().toISOString() })
+        .eq("id", contractId);
+    } else {
+      // A real failure (credit exhausted, rate limit, network error, ...).
+      // Only the HTTP response used to carry this - invisible to anyone not
+      // watching live, e.g. the automated continue-draft loop - so the badge
+      // just showed a red "error" with no way to know why or that it's safe
+      // to retry. Leave a durable, translated explanation in the chat too.
+      await admin
+        .from("contracts")
+        .update({ status: "error", updated_at: new Date().toISOString() })
+        .eq("id", contractId);
+      await admin.from("contract_chat_messages").insert({
+        chat_id: chat.id,
+        org_id: contract.org_id,
+        role: "assistant",
+        content: translateAiError((err as Error).message),
+      });
+    }
     throw err;
   }
 

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { listContracts } from "@/lib/db/queries/contracts";
 import ContractStatusBadge from "@/components/ContractStatusBadge";
+import ContractActionsMenu from "@/components/ContractActionsMenu";
 
 export default async function ContractsPage() {
   const supabase = await createClient();
@@ -20,7 +21,10 @@ export default async function ContractsPage() {
           <Link key={c.id} href={`/contracts/${c.id}`} className="card">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <strong>{c.title ?? c.id}</strong>
-              <ContractStatusBadge contractId={c.id} initialStatus={c.status} />
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <ContractStatusBadge contractId={c.id} initialStatus={c.status} />
+                <ContractActionsMenu contractId={c.id} isArchived={c.status === "archived"} />
+              </div>
             </div>
             <p style={{ color: "var(--text-muted)", margin: "0.25rem 0 0" }}>
               {c.contract_environments?.name}
