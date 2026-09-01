@@ -48,12 +48,15 @@ interface PendingAttachment {
 export default function ContractChat({
   contractId,
   initialMessages,
+  initialStatus,
 }: {
   contractId: string;
   initialMessages: ContractChatMessage[];
+  initialStatus: string;
 }) {
   const router = useRouter();
   const [messages, setMessages] = useState(initialMessages);
+  const [status, setStatus] = useState(initialStatus);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [stepIndex, setStepIndex] = useState<number | null>(null);
@@ -86,6 +89,33 @@ export default function ContractChat({
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 240)}px`;
   }, [input]);
+
+  // Large contracts draft one section per turn (see chatEngine.ts) - keep
+  // continuing automatically, no lawyer input needed, until either a final
+  // section lands or the AI stops for some other reason. Each section
+  // message already renders as its own chat bubble, so this loop doubles as
+  // live progress instead of a fake spinner. Shared by sendMessage's
+  // automatic loop and the manual "המשך" retry after a failed/stuck turn.
+  async function runContinuationLoop(lastMsg: ContractChatMessage | undefined) {
+    const MAX_SECTIONS = 60; // safety cap against a runaway loop that never finalizes
+    let sectionCount = 0;
+    while ((lastMsg?.tool_call as { type?: string; is_final_section?: boolean } | null)?.type === "submit_draft_section" &&
+      (lastMsg!.tool_call as { is_final_section: boolean }).is_final_section === false) {
+      if (++sectionCount > MAX_SECTIONS) {
+        setError("הטיוטה כוללת חלקים רבים מהצפוי ועצרנו כדי לא להסתחרר - אפשר ללחוץ על המשך, או לפנות לתמיכה.");
+        return;
+      }
+      const contRes = await fetch(`/api/contracts/${contractId}/continue-draft`, { method: "POST" });
+      if (!contRes.ok) {
+        const b = await contRes.json().catch(() => ({}));
+        setError(b.error ?? "שגיאה בהמשך הכנת הטיוטה");
+        return;
+      }
+      const body = await contRes.json();
+      setMessages((prev) => [...prev, ...body.messages]);
+      lastMsg = body.messages[body.messages.length - 1];
+    }
+  }
 
   async function sendMessage() {
     if (!input.trim() || sending) return;
@@ -125,41 +155,51 @@ export default function ContractChat({
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         setError(body.error ?? "שגיאה בשליחת ההודעה");
+        setStatus("error");
         return;
       }
-      let body = await res.json();
+      const body = await res.json();
       setMessages((prev) => [...prev, ...body.messages]);
-
-      // Large contracts draft one section per turn (see chatEngine.ts) - keep
-      // continuing automatically, no lawyer input needed, until either a
-      // final section lands or the AI stops for some other reason. Each
-      // section message already renders as its own chat bubble, so this loop
-      // doubles as live progress instead of a fake spinner.
-      const MAX_SECTIONS = 60; // safety cap against a runaway loop that never finalizes
-      let lastMsg = body.messages[body.messages.length - 1];
-      let sectionCount = 0;
-      while ((lastMsg?.tool_call as { type?: string; is_final_section?: boolean } | null)?.type === "submit_draft_section" &&
-        (lastMsg.tool_call as { is_final_section: boolean }).is_final_section === false) {
-        if (++sectionCount > MAX_SECTIONS) {
-          setError("הטיוטה כוללת חלקים רבים מהצפוי ועצרנו כדי לא להסתחרר - אפשר לשלוח הודעה כדי להמשיך, או לפנות לתמיכה.");
-          break;
-        }
-        const contRes = await fetch(`/api/contracts/${contractId}/continue-draft`, {
-          method: "POST",
-        });
-        if (!contRes.ok) {
-          const b = await contRes.json().catch(() => ({}));
-          setError(b.error ?? "שגיאה בהמשך הכנת הטיוטה");
-          break;
-        }
-        body = await contRes.json();
-        setMessages((prev) => [...prev, ...body.messages]);
-        lastMsg = body.messages[body.messages.length - 1];
-      }
+      await runContinuationLoop(body.messages[body.messages.length - 1]);
 
       router.refresh(); // picks up new contract_files / status shown outside this component
     } catch (err) {
       setError((err as Error).message ?? "שגיאה בשליחת ההודעה");
+      setStatus("error");
+    } finally {
+      clearTimeout(step1Timer);
+      clearTimeout(step2Timer);
+      setStepIndex(null);
+      setSending(false);
+    }
+  }
+
+  // Recovers a turn that genuinely never got a response - e.g. a platform
+  // timeout mid-request (no chat-level cancel button exists, so this is the
+  // only way back short of reloading and re-typing feedback that was already
+  // sent). Calls continue-draft directly: chatEngine picks up exactly where
+  // the lawyer's last message or the last unfinished section left off.
+  async function retryTurn() {
+    if (sending) return;
+    setError(null);
+    setSending(true);
+    setStepIndex(0);
+    const step1Timer = setTimeout(() => setStepIndex(1), 5000);
+    const step2Timer = setTimeout(() => setStepIndex(2), 20000);
+    try {
+      const res = await fetch(`/api/contracts/${contractId}/continue-draft`, { method: "POST" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setError(body.error ?? "השגיאה חוזרת - כדאי לפנות לתמיכה אם זה נמשך.");
+        return;
+      }
+      const body = await res.json();
+      setMessages((prev) => [...prev, ...body.messages]);
+      setStatus("revising"); // hides the retry button; ContractStatusBadge's own polling reflects the real status moments later
+      await runContinuationLoop(body.messages[body.messages.length - 1]);
+      router.refresh();
+    } catch (err) {
+      setError((err as Error).message ?? "השגיאה חוזרת - כדאי לפנות לתמיכה אם זה נמשך.");
     } finally {
       clearTimeout(step1Timer);
       clearTimeout(step2Timer);
@@ -424,7 +464,14 @@ export default function ContractChat({
           {sending ? "שולח..." : <Send size={18} />}
         </button>
       </div>
-      {error && <p style={{ color: "var(--danger)", margin: 0 }}>{error}</p>}
+      {(error || status === "error") && (
+        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+          {error && <p style={{ color: "var(--danger)", margin: 0 }}>{error}</p>}
+          <button type="button" onClick={retryTurn} disabled={sending}>
+            {sending ? "ממשיך..." : "המשך"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

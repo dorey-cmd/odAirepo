@@ -55,7 +55,7 @@ export default async function ContractDetailPage({
       </div>
       <p style={{ color: "var(--text-muted)", marginTop: -12 }}>{contract.contract_environments?.name}</p>
 
-      <ContractChat contractId={contractId} initialMessages={messages ?? []} />
+      <ContractChat contractId={contractId} initialMessages={messages ?? []} initialStatus={contract.status} />
 
       <div className="card stack">
         <h2 style={{ marginTop: 0 }}>קבצי החוזה</h2>
