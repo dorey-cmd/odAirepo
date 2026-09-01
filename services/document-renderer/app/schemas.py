@@ -53,6 +53,11 @@ class ContentNode(BaseModel):
     numId: Optional[int] = None
     ilvl: Optional[int] = None
     alignment: Optional[Literal["left", "center", "right", "justify"]] = None
+    # Short note on a location-specific concern - the lawyer should look at
+    # THIS clause specifically. Rendered as a yellow highlight on the
+    # paragraph itself, so it's visible right in the document instead of only
+    # as a disconnected line in a generic "open issues" list in the chat.
+    flag: Optional[str] = None
     rows: Optional[list[list[str]]] = None  # only for type == "table"
 
 

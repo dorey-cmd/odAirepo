@@ -399,7 +399,7 @@ function extractPendingSections(
 }
 
 /** Same as extractPendingSections, but re-fetches fresh - used right after inserting the final section itself. */
-async function collectPendingSections(
+export async function collectPendingSections(
   admin: SupabaseClient,
   chatId: string,
   contractId: string,
@@ -476,7 +476,7 @@ function buildDraftFilename(
   return `${partyName}_${title}_${dateStr}_V${version}.docx`;
 }
 
-async function finalizeDraft(
+export async function finalizeDraft(
   admin: SupabaseClient,
   contract: Record<string, unknown>,
   environment: Record<string, unknown>,

@@ -59,7 +59,11 @@ export const SUBMIT_DRAFT_SECTION_TOOL: Anthropic.Tool = {
     "to preserve an exact numbering scheme with intentional gaps (e.g. clauses removed for a single-tenant version), which Word's " +
     "own auto-numbering cannot do. Reserve numId/ilvl for genuine auto-lists where sequential renumbering is actually desired. " +
     "ALIGNMENT: set `alignment` directly on a node (e.g. \"center\" for a title, a date line, or a signature block) rather than " +
-    "assuming a style_name implies a particular alignment - most templates apply alignment directly on the paragraph, not via a style.",
+    "assuming a style_name implies a particular alignment - most templates apply alignment directly on the paragraph, not via a style. " +
+    "FLAGGING CONCERNS: when the lawyer asks you to mark specific clauses for review (e.g. an unusual numbering scheme, a one-sided " +
+    "term, something that needs their judgment call), set `flag` on THAT SPECIFIC node to a short note - it renders as a yellow " +
+    "highlight directly on that clause in the document, so the lawyer sees it in context instead of only as a disconnected line in " +
+    "open_issues. Use `flag` for location-specific concerns and `open_issues` for document-wide notes with no single clause to point to.",
   input_schema: {
     type: "object",
     properties: {
@@ -78,6 +82,7 @@ export const SUBMIT_DRAFT_SECTION_TOOL: Anthropic.Tool = {
             numId: { type: "integer" },
             ilvl: { type: "integer" },
             alignment: { type: "string", enum: ["left", "center", "right", "justify"] },
+            flag: { type: "string", description: "Short note on a concern with THIS specific clause - rendered as a yellow highlight on it." },
             rows: { type: "array", items: { type: "array", items: { type: "string" } } },
           },
           required: ["type"],

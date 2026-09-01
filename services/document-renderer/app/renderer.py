@@ -11,10 +11,10 @@ import re
 from io import BytesIO
 
 from docx import Document
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_COLOR_INDEX
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import Pt
+from docx.shared import Pt, RGBColor
 
 from app.schemas import ContentNode, ContentTree
 
@@ -93,6 +93,17 @@ def _known_paragraph_style_names(document: Document) -> set[str]:
     return {s.name for s in document.styles if s.type is not None and s.name}
 
 
+def _apply_flag(document: Document, paragraph, flag_text: str) -> None:
+    for run in paragraph.runs:
+        run.font.highlight_color = WD_COLOR_INDEX.YELLOW
+    note = document.add_paragraph()
+    note.paragraph_format.space_after = Pt(_MIN_SPACE_AFTER_PT)
+    run = note.add_run(f"⚑ לתשומת לב עורך/ת הדין: {flag_text}")
+    run.font.highlight_color = WD_COLOR_INDEX.YELLOW
+    run.font.italic = True
+    run.font.color.rgb = RGBColor(0x66, 0x4D, 0x00)
+
+
 def _add_paragraph(document: Document, node: ContentNode, known_styles: set[str]):
     style_name = node.style_name if node.style_name in known_styles else None
     paragraph = document.add_paragraph(node.text or "", style=style_name)
@@ -101,6 +112,8 @@ def _add_paragraph(document: Document, node: ContentNode, known_styles: set[str]
     if node.alignment:
         paragraph.alignment = _ALIGNMENT_MAP.get(node.alignment)
     _ensure_min_spacing(paragraph)
+    if node.flag:
+        _apply_flag(document, paragraph, node.flag)
     return paragraph
 
 
