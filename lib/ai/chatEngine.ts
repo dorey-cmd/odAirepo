@@ -133,27 +133,45 @@ async function runChatTurnLocked(
   const latestDraftFileAt = await getLatestDraftFileCreatedAt(admin, contractId);
   const pendingSections = extractPendingSections(history ?? [], latestDraftFileAt);
 
-  const { static: staticSystemPrompt, dynamic: dynamicSystemPrompt } = buildDraftingSystemPrompt({
+  const { static: staticSystemPrompt, draftSectionBlocks, trailing: trailingSystemPrompt } = buildDraftingSystemPrompt({
     environmentName: environment.name as string,
     guidelinesText: guidelinesFile?.extracted_text ?? null,
     styleCatalog: templateFile?.extracted_style_catalog ?? null,
     learnedRules: learnedRules ?? [],
     extractedFields: (contract.extracted_fields as Record<string, unknown>) ?? {},
     missingFields: (contract.missing_fields as { field_key: string; reason: string }[]) ?? [],
-    draftInProgress: pendingSections.nodes.length > 0 ? pendingSections : undefined,
+    draftInProgress: pendingSections.sections.length > 0 ? pendingSections : undefined,
   });
 
   // Cost optimization, no quality impact: the model sees the exact same
-  // content either way. `staticSystemPrompt` (guidelines, style catalog,
-  // instructions) is identical across every turn of a contract's whole
-  // drafting pass, so marking it as a cache breakpoint means only the FIRST
-  // turn pays full price for it - every later turn reads it at ~10% cost.
-  // `dynamicSystemPrompt` (the ever-growing draft-so-far) changes every turn
-  // and would never get a cache hit, so it's deliberately left uncached -
-  // marking it would only add the write premium for nothing.
+  // content either way, just packaged so the stable parts can be billed once
+  // instead of on every turn. `staticSystemPrompt` (guidelines, style
+  // catalog, instructions) is identical across every turn of a contract's
+  // whole drafting pass - even across DIFFERENT contracts in the same
+  // environment - so it gets a 1-hour cache breakpoint. `draftSectionBlocks`
+  // is one IMMUTABLE block per already-submitted section (see
+  // draftingSystemPrompt.ts) - the breakpoint moves to the newest block each
+  // turn, so everything before it is a byte-for-byte match to what was
+  // cached last turn and gets served as a cheap cache READ instead of being
+  // rewritten from scratch at the cache-WRITE premium every single turn.
+  // `trailingSystemPrompt` (fields used so far) is small and changes every
+  // turn, so it's deliberately left uncached and placed AFTER the breakpoint
+  // - caching it would only add the write premium for nothing, and were it
+  // placed BEFORE the breakpoint it would invalidate the section-block cache
+  // just by changing.
+  const lastSectionBlockIndex = draftSectionBlocks.length - 1;
   const systemBlocks = [
-    { type: "text" as const, text: staticSystemPrompt, cache_control: { type: "ephemeral" as const } },
-    ...(dynamicSystemPrompt ? [{ type: "text" as const, text: dynamicSystemPrompt }] : []),
+    {
+      type: "text" as const,
+      text: staticSystemPrompt,
+      cache_control: { type: "ephemeral" as const, ttl: "1h" as const },
+    },
+    ...draftSectionBlocks.map((text, i) => ({
+      type: "text" as const,
+      text,
+      ...(i === lastSectionBlockIndex ? { cache_control: { type: "ephemeral" as const } } : {}),
+    })),
+    ...(trailingSystemPrompt ? [{ type: "text" as const, text: trailingSystemPrompt }] : []),
   ];
 
   const attachmentIds = Array.from(
@@ -216,31 +234,24 @@ async function runChatTurnLocked(
     .update({ status: activeStatus, updated_at: new Date().toISOString() })
     .eq("id", contractId);
 
-  // Same cost-optimization idea applied to the conversation history: it only
-  // ever grows by 1-2 messages per turn, so marking the LAST message as a
-  // cache breakpoint lets Claude's cache lookup find the previous turn's
-  // (shorter) cached prefix and only bill full price for what's new -
-  // without this, the entire growing history was resent at full price on
-  // every single turn.
-  const cachedMessages = messages.map((m, i) =>
-    i === messages.length - 1
-      ? { role: m.role, content: [{ type: "text" as const, text: m.content, cache_control: { type: "ephemeral" as const } }] }
-      : m,
-  );
-
   const claude = createClaudeClient();
   let response;
   try {
-    // Each turn produces at most a few sections, not the whole document, so
-    // this only needs enough budget for that - see submit_draft_section.
+    // Raised from 16000: real usage showed the model naturally producing
+    // ~7-9K tokens/turn well under that ceiling - turn granularity was a
+    // prompt-wording choice, not a budget limit. A higher ceiling plus the
+    // tightened SECTIONING guidance (draftingSystemPrompt.ts) lets it pack
+    // more per call, which directly cuts the number of turns - and since
+    // each turn resends everything drafted so far, fewer turns means less
+    // total volume transmitted across the whole drafting pass.
     const stream = claude.messages.stream(
       {
         model: DRAFTING_MODEL,
-        max_tokens: 16000,
+        max_tokens: 64000,
         system: systemBlocks,
         tools: CHAT_TOOLS,
         tool_choice: { type: "auto" },
-        messages: cachedMessages,
+        messages,
       },
       { signal },
     );
@@ -283,6 +294,8 @@ async function runChatTurnLocked(
       output_tokens: response.usage.output_tokens,
       cache_creation_input_tokens: response.usage.cache_creation_input_tokens,
       cache_read_input_tokens: response.usage.cache_read_input_tokens,
+      cache_creation_5m_tokens: response.usage.cache_creation?.ephemeral_5m_input_tokens,
+      cache_creation_1h_tokens: response.usage.cache_creation?.ephemeral_1h_input_tokens,
     },
   });
 
@@ -381,11 +394,16 @@ async function getLatestDraftFileCreatedAt(admin: SupabaseClient, contractId: st
   return data?.created_at ?? null;
 }
 
+interface PendingSections {
+  nodes: unknown[];
+  filled_fields: Record<string, unknown>;
+  open_issues: string[];
+  /** Same content as `nodes`, but grouped per already-submitted section (submission order) - see draftingSystemPrompt.ts for why this shape matters for caching. */
+  sections: { section_title: string | null; nodes: unknown[] }[];
+}
+
 /** All submit_draft_section calls after the last successfully-rendered draft file, in submission order - pure function over already-loaded rows. */
-function extractPendingSections(
-  rows: { tool_call: unknown; created_at: string }[],
-  sinceTimestamp: string | null,
-): { nodes: unknown[]; filled_fields: Record<string, unknown>; open_issues: string[] } {
+function extractPendingSections(rows: { tool_call: unknown; created_at: string }[], sinceTimestamp: string | null): PendingSections {
   const pending = rows
     .filter((m) => !sinceTimestamp || m.created_at > sinceTimestamp)
     .map((m) => m.tool_call as DraftSectionToolCall | null)
@@ -395,15 +413,12 @@ function extractPendingSections(
     nodes: pending.flatMap((tc) => tc.nodes ?? []),
     filled_fields: Object.assign({}, ...pending.map((tc) => tc.filled_fields ?? {})),
     open_issues: pending.flatMap((tc) => tc.open_issues ?? []),
+    sections: pending.map((tc) => ({ section_title: tc.section_title, nodes: tc.nodes ?? [] })),
   };
 }
 
 /** Same as extractPendingSections, but re-fetches fresh - used right after inserting the final section itself. */
-export async function collectPendingSections(
-  admin: SupabaseClient,
-  chatId: string,
-  contractId: string,
-): Promise<{ nodes: unknown[]; filled_fields: Record<string, unknown>; open_issues: string[] }> {
+export async function collectPendingSections(admin: SupabaseClient, chatId: string, contractId: string): Promise<PendingSections> {
   const [{ data: msgs }, latestDraftFileAt] = await Promise.all([
     admin.from("contract_chat_messages").select("tool_call, created_at").eq("chat_id", chatId).order("created_at", { ascending: true }),
     getLatestDraftFileCreatedAt(admin, contractId),
@@ -465,7 +480,7 @@ function sanitizeFilenamePart(s: string): string {
 }
 
 /** {party name}_{contract title}_{date}_V{revision round} - so the lawyer can identify a draft at a glance without opening it. */
-function buildDraftFilename(
+export function buildDraftFilename(
   environment: Record<string, unknown>,
   filledFields: Record<string, unknown>,
   version: number,

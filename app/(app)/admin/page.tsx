@@ -21,7 +21,11 @@ export default async function AdminPage() {
       admin.from("orgs").select("id, name, created_at").order("created_at", { ascending: false }),
       admin.from("contract_environments").select("id, org_id"),
       admin.from("contracts").select("id, org_id, title, status, updated_at"),
-      admin.from("ai_usage_log").select("org_id, purpose, model, input_tokens, output_tokens"),
+      admin
+        .from("ai_usage_log")
+        .select(
+          "org_id, purpose, model, input_tokens, output_tokens, cache_read_input_tokens, cache_creation_5m_tokens, cache_creation_1h_tokens",
+        ),
       admin
         .from("webhook_intake_events")
         .select("id, org_id, environment_id, error_message, created_at")
@@ -41,7 +45,11 @@ export default async function AdminPage() {
   let totalOutput = 0;
   let totalCost = 0;
   for (const u of usage ?? []) {
-    const cost = estimateCostUsd(u.model, u.input_tokens, u.output_tokens);
+    const cost = estimateCostUsd(u.model, u.input_tokens, u.output_tokens, {
+      creation5mTokens: u.cache_creation_5m_tokens,
+      creation1hTokens: u.cache_creation_1h_tokens,
+      readTokens: u.cache_read_input_tokens,
+    });
     const cur = usageByOrg.get(u.org_id) ?? { input: 0, output: 0, cost: 0 };
     cur.input += u.input_tokens;
     cur.output += u.output_tokens;

@@ -22,7 +22,10 @@ export default async function AdminOrgDetailPage({ params }: { params: Promise<{
         .select("id, title, status, updated_at, environment_id")
         .eq("org_id", orgId)
         .order("updated_at", { ascending: false }),
-      admin.from("ai_usage_log").select("model, purpose, input_tokens, output_tokens").eq("org_id", orgId),
+      admin
+        .from("ai_usage_log")
+        .select("model, purpose, input_tokens, output_tokens, cache_read_input_tokens, cache_creation_5m_tokens, cache_creation_1h_tokens")
+        .eq("org_id", orgId),
       admin.from("org_members").select("user_id, role, created_at").eq("org_id", orgId),
     ]);
 
@@ -39,7 +42,16 @@ export default async function AdminOrgDetailPage({ params }: { params: Promise<{
 
   const totalInput = (usage ?? []).reduce((sum, u) => sum + u.input_tokens, 0);
   const totalOutput = (usage ?? []).reduce((sum, u) => sum + u.output_tokens, 0);
-  const totalCost = (usage ?? []).reduce((sum, u) => sum + estimateCostUsd(u.model, u.input_tokens, u.output_tokens), 0);
+  const totalCost = (usage ?? []).reduce(
+    (sum, u) =>
+      sum +
+      estimateCostUsd(u.model, u.input_tokens, u.output_tokens, {
+        creation5mTokens: u.cache_creation_5m_tokens,
+        creation1hTokens: u.cache_creation_1h_tokens,
+        readTokens: u.cache_read_input_tokens,
+      }),
+    0,
+  );
 
   const envNameById = new Map((environments ?? []).map((e) => [e.id, e.name]));
 

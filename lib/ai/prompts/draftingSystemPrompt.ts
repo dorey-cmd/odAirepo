@@ -5,21 +5,41 @@ interface DraftingPromptInput {
   learnedRules: { topic: string | null; rule_text: string }[];
   extractedFields: Record<string, unknown>;
   missingFields: { field_key: string; reason: string }[];
-  currentDraftNodes?: unknown;
   /** Sections already submitted in the CURRENT, not-yet-finalized drafting pass - see chatEngine.ts. */
-  draftInProgress?: { nodes: unknown[]; filled_fields: Record<string, unknown>; open_issues: string[] };
+  draftInProgress?: { sections: { section_title: string | null; nodes: unknown[] }[]; filled_fields: Record<string, unknown> };
 }
 
 /**
- * Split in two so the caller (chatEngine.ts) can mark only `static` with a
- * prompt-cache breakpoint: it's identical across every turn of a contract's
- * whole drafting pass (same guidelines, style catalog, intake fields), while
- * `dynamic` grows or changes every turn and would never get a cache hit
- * anyway - caching it would only add the write premium for nothing. This is
- * a pure cost optimization: the model sees exactly the same content either
- * way, just billed once instead of on every turn.
+ * Split three ways so the caller (chatEngine.ts) can place prompt-cache
+ * breakpoints correctly:
+ *
+ * - `static` is identical across every turn of a contract's whole drafting
+ *   pass (same guidelines, style catalog, intake fields) - always cached.
+ * - `draftSectionBlocks` is one IMMUTABLE block per already-submitted
+ *   section, in submission order. Each block's content never changes once
+ *   written - only new blocks get appended as more sections are submitted.
+ *   This is what makes caching actually work across a multi-turn drafting
+ *   pass: the cache breakpoint moves to the new last block each turn, and
+ *   everything before it is a byte-for-byte match to what was cached the
+ *   turn before, so the API serves the growing prefix as a cheap cache read
+ *   instead of rewriting all of it from scratch every turn. (Earlier this
+ *   was one big `JSON.stringify(allNodesSoFar)` blob rebuilt every turn -
+ *   since it changed every time, no turn after the first ever got a cache
+ *   hit on it, and every turn paid the ~1.25x cache-WRITE premium on the
+ *   entire growing draft instead of the ~0.1x cache-READ price.)
+ * - `trailing` is small and always rebuilt fresh (fields used so far) -
+ *   kept OUT of the cached prefix so it never invalidates the section
+ *   blocks just by changing.
+ *
+ * This is a pure cost/packaging optimization: the model sees exactly the
+ * same content either way, just split so the stable part can be billed
+ * once instead of on every turn.
  */
-export function buildDraftingSystemPrompt(input: DraftingPromptInput): { static: string; dynamic: string | null } {
+export function buildDraftingSystemPrompt(input: DraftingPromptInput): {
+  static: string;
+  draftSectionBlocks: string[];
+  trailing: string | null;
+} {
   const staticSections: string[] = [];
 
   staticSections.push(
@@ -33,15 +53,17 @@ export function buildDraftingSystemPrompt(input: DraftingPromptInput): { static:
       `true only on the last section, after which everything you submitted this pass is combined in order ` +
       `into the final document; (3) if the lawyer's answer reveals a house rule not covered by the ` +
       `guidelines below, you may also call propose_guideline_update in the same turn.\n\n` +
-      `SECTIONING: Each turn you should submit exactly the sections you can comfortably produce in that ` +
-      `response, then stop - you'll be called again automatically to continue with the next section, with ` +
-      `no need to wait for the lawyer. Never repeat a section you already submitted this pass, and never ` +
-      `try to cram an entire multi-page contract's nodes into one call - that has previously caused the ` +
-      `whole draft to silently fail. Splitting into sections is purely so each individual call stays small ` +
-      `and reliable - you are still the single author of one coherent document: before every section, check ` +
-      `the DRAFT SO FAR below (when present) so terminology, defined terms, numbering, and cross-references ` +
-      `stay consistent with what you already wrote, and the finished contract reads as one continuous work, ` +
-      `not disconnected fragments.\n\n` +
+      `SECTIONING: Each call to submit_draft_section is real, billable overhead on top of whatever it ` +
+      `contains - re-sending the full prompt, tool definitions, and everything drafted so far. Prefer ` +
+      `FEWER, LARGER calls: pack every heading/clause/appendix you can coherently produce in one response ` +
+      `into a SINGLE call, and only start a new one when you are genuinely running low on room to keep ` +
+      `going - not by habit, and not just because you reached one logical heading. Splitting into multiple ` +
+      `sections exists purely so no single call risks failing outright on a very large document - it is ` +
+      `not a target to aim for, and small, cautious sections directly cost the lawyer money for no benefit. ` +
+      `You are still the single author of one coherent document: before every call, check the DRAFT SO FAR ` +
+      `below (when present) so terminology, defined terms, numbering, and cross-references stay consistent ` +
+      `with what you already wrote, and the finished contract reads as one continuous work, not disconnected ` +
+      `fragments. Never repeat a section you already submitted this pass.\n\n` +
       `LANGUAGE: Always reply in Hebrew - chat text, submit_draft_section's open_issues, and ` +
       `propose_guideline_update's topic/rationale all included - matching the lawyer's own language, ` +
       `regardless of what language the intake data or guidelines happen to be in. The contract body itself ` +
@@ -76,28 +98,19 @@ export function buildDraftingSystemPrompt(input: DraftingPromptInput): { static:
     );
   }
 
-  const dynamicSections: string[] = [];
+  const draftSectionBlocks = (input.draftInProgress?.sections ?? []).map(
+    (section, i) =>
+      `DRAFT SECTION ${i + 1}${section.section_title ? ` - ${section.section_title}` : ""} (already submitted ` +
+      `THIS drafting pass, in order - this is the actual content, not a summary. Review it for consistency - ` +
+      `matching terminology, defined terms, numbering, no duplicated or contradicted content - before adding ` +
+      `the next section. The final document will be exactly these sections plus whatever you submit now, in ` +
+      `the order submitted. Never resubmit anything already here:\n${JSON.stringify(section.nodes, null, 2)}`,
+  );
 
-  if (input.draftInProgress) {
-    dynamicSections.push(
-      `DRAFT SO FAR (sections you have already submitted THIS drafting pass, in order - this is the actual content, ` +
-        `not a summary. Review it for consistency - matching terminology, defined terms, numbering, no duplicated or ` +
-        `contradicted content - before adding the next section. The final document will be exactly this plus whatever ` +
-        `you submit now, in the order submitted. Never resubmit anything already here:\n` +
-        `${JSON.stringify(input.draftInProgress.nodes, null, 2)}\n\n` +
-        `FIELDS ALREADY USED THIS PASS:\n${JSON.stringify(input.draftInProgress.filled_fields, null, 2)}`,
-    );
-  }
+  const trailing =
+    input.draftInProgress && Object.keys(input.draftInProgress.filled_fields).length > 0
+      ? `FIELDS ALREADY USED THIS DRAFTING PASS:\n${JSON.stringify(input.draftInProgress.filled_fields, null, 2)}`
+      : null;
 
-  if (input.currentDraftNodes) {
-    dynamicSections.push(
-      `CURRENT DRAFT (from a previous submit_draft call - the lawyer may be asking for revisions to this):\n` +
-        JSON.stringify(input.currentDraftNodes, null, 2),
-    );
-  }
-
-  return {
-    static: staticSections.join("\n\n"),
-    dynamic: dynamicSections.length > 0 ? dynamicSections.join("\n\n") : null,
-  };
+  return { static: staticSections.join("\n\n"), draftSectionBlocks, trailing };
 }

@@ -8,4 +8,7 @@ export function createClaudeClient(): Anthropic {
 }
 
 export const DRAFTING_MODEL = "claude-sonnet-5";
-export const EXTRACTION_MODEL = "claude-sonnet-5";
+// Field extraction is bounded structured parsing (never generates contract
+// text), so the flagship drafting model is unnecessary cost here - Haiku is
+// more than capable for "does this value appear in this text."
+export const EXTRACTION_MODEL = "claude-haiku-4-5-20251001";
