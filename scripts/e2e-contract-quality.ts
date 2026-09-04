@@ -184,7 +184,7 @@ async function main() {
     .flatMap((tc) => tc.nodes ?? []);
   const doubleNumbered = allNodes.filter((n) => n.numId != null && LEADING_NUMBER_RE.test((n.text ?? "").trim()));
   record(
-    "no double-numbered clauses",
+    "no double-numbered clauses (node-level)",
     doubleNumbered.length === 0,
     doubleNumbered.length === 0 ? `checked ${allNodes.length} nodes` : `${doubleNumbered.length} of ${allNodes.length} nodes set BOTH a literal number and numId`,
   );
@@ -225,6 +225,68 @@ print(f"{len(d.paragraphs)} {under}")
     record("paragraph spacing (min 8pt)", under === 0, `${under} of ${total} paragraphs under 8pt spacing`);
   } catch (err) {
     record("paragraph spacing (min 8pt)", false, `check failed to run: ${(err as Error).message}`);
+  }
+
+  // --- Criterion: mechanical - no double numbering in the RENDERED file ---
+  // The node-level check above only catches a node that sets numId itself -
+  // it can't see a style (e.g. a heading style) that carries its OWN baked-in
+  // numPr in the template's styles.xml, which Word applies regardless of
+  // anything set on the paragraph. That inherited numbering only shows up in
+  // the actual rendered output, not in the pre-render node data, so it has
+  // to be checked here against the real file.
+  try {
+    const pythonExe = join("services", "document-renderer", ".venv", "Scripts", "python.exe");
+    const checkScript = `
+import sys, re
+from docx import Document
+NS = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
+LEADING_NUMBER_RE = re.compile(r"^\\s*(\\(?[0-9]+([.\\-][0-9]+)*\\)?[.)]?|\\(?[א-ת]\\)?[.)])\\s")
+
+def effective_num_id(paragraph):
+    p_pr = paragraph._p.find(NS + 'pPr')
+    num_pr = p_pr.find(NS + 'numPr') if p_pr is not None else None
+    if num_pr is not None:
+        num_id_el = num_pr.find(NS + 'numId')
+        return num_id_el.get(NS + 'val') if num_id_el is not None else None
+    style = paragraph.style
+    seen = set()
+    while style is not None and id(style) not in seen:
+        seen.add(id(style))
+        s_pPr = style.element.find(NS + 'pPr')
+        s_num_pr = s_pPr.find(NS + 'numPr') if s_pPr is not None else None
+        if s_num_pr is not None:
+            num_id_el = s_num_pr.find(NS + 'numId')
+            return num_id_el.get(NS + 'val') if num_id_el is not None else None
+        style = getattr(style, 'base_style', None)
+    return None
+
+d = Document(sys.argv[1])
+bad = []
+for p in d.paragraphs:
+    text = (p.text or '').strip()
+    if not text or not LEADING_NUMBER_RE.match(text):
+        continue
+    num_id = effective_num_id(p)
+    if num_id is not None and num_id != '0':
+        bad.append(text[:60])
+print(len(bad))
+for t in bad[:10]:
+    print(t)
+`;
+    const scriptPath = join(tmpDir, "check_rendered_numbering.py");
+    writeFileSync(scriptPath, checkScript);
+    const { stdout } = await execFileAsync(pythonExe, [scriptPath, docxPath]);
+    const lines = stdout.trim().split("\n");
+    const badCount = Number(lines[0]);
+    record(
+      "no double-numbered clauses (rendered file)",
+      badCount === 0,
+      badCount === 0
+        ? "verified against the actual rendered document"
+        : `${badCount} paragraph(s) will show Word's own auto-number on top of a literal number, e.g.: ${lines.slice(1).join(" | ")}`,
+    );
+  } catch (err) {
+    record("no double-numbered clauses (rendered file)", false, `check failed to run: ${(err as Error).message}`);
   }
 
   // --- Criterion: substantive legal quality (LLM-as-judge) ---

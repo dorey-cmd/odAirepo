@@ -109,6 +109,18 @@ def _add_paragraph(document: Document, node: ContentNode, known_styles: set[str]
     paragraph = document.add_paragraph(node.text or "", style=style_name)
     if node.numId is not None and not _looks_pre_numbered(node.text):
         _set_num_pr(paragraph, node.numId, node.ilvl or 0)
+    else:
+        # The paragraph's STYLE itself (e.g. a heading style) can carry its
+        # own baked-in numPr in the template's styles.xml, independent of
+        # anything set on this specific paragraph. Left alone, Word silently
+        # applies that inherited auto-number on top of whatever literal
+        # number the model already typed into the text (e.g. "1.1 ...") -
+        # producing a visibly doubled number that a node-level check for
+        # "does this node have both numId and a leading number" can never
+        # catch, since the paragraph's OWN numId is genuinely None. Setting
+        # numId=0 is OOXML's standard way to explicitly override/disable an
+        # inherited style numbering for one paragraph.
+        _set_num_pr(paragraph, 0, 0)
     if node.alignment:
         paragraph.alignment = _ALIGNMENT_MAP.get(node.alignment)
     _ensure_min_spacing(paragraph)
