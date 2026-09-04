@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isPlatformAdmin } from "@/lib/db/queries/admin";
-import { getContractStorageProvider } from "@/lib/storage/factory";
+import { getContractStorageProvider, getEnvironmentStorageProvider } from "@/lib/storage/factory";
 
 export async function GET(
   _req: Request,
@@ -39,10 +39,12 @@ export async function GET(
   if (fileError || !file) return NextResponse.json({ error: "File not found" }, { status: 404 });
 
   const environment = contract.contract_environments as unknown as { storage_provider: "supabase" | "google_drive" };
-  const storage = getContractStorageProvider(
-    { org_id: contract.org_id, storage_provider: environment.storage_provider },
-    client,
-  );
+  // Intake-upload files physically live in the environment's storage bucket
+  // (they're downloaded from there during intake, never copied) - every
+  // other role (draft_version, supporting_upload) lives in the contract's
+  // own bucket. See lib/webhooks/intakeProcessor.ts.
+  const getProvider = file.file_role === "intake_upload" ? getEnvironmentStorageProvider : getContractStorageProvider;
+  const storage = getProvider({ org_id: contract.org_id, storage_provider: environment.storage_provider }, client);
 
   const url = await storage.getSignedUrl(
     { provider: file.storage_provider, path: file.storage_path, driveFileId: file.google_drive_file_id ?? undefined },

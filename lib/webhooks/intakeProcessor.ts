@@ -50,6 +50,14 @@ export async function processIntakeEvent(eventId: string): Promise<void> {
       .eq("environment_id", environment.id);
 
     const fileTexts: { filename: string; text: string }[] = [];
+    const downloadedRawFiles: {
+      filename: string;
+      mime_type: string;
+      storage_path?: string;
+      drive_file_id?: string;
+      provider: "supabase" | "google_drive";
+      size_bytes: number;
+    }[] = [];
     const rawFiles =
       (event.raw_files as {
         filename: string;
@@ -72,6 +80,14 @@ export async function processIntakeEvent(eventId: string): Promise<void> {
           });
           const text = await extractText(buffer, f.mime_type, f.filename);
           fileTexts.push({ filename: f.filename, text });
+          downloadedRawFiles.push({
+            filename: f.filename,
+            mime_type: f.mime_type,
+            storage_path: f.storage_path,
+            drive_file_id: f.drive_file_id,
+            provider: f.provider ?? (environment.storage_provider as "supabase" | "google_drive"),
+            size_bytes: buffer.byteLength,
+          });
         } catch (err) {
           console.error(`Could not extract text from ${f.filename}:`, err);
         }
@@ -123,6 +139,29 @@ export async function processIntakeEvent(eventId: string): Promise<void> {
       .select("*")
       .single();
     if (contractError) throw new Error(contractError.message);
+
+    // Record the file(s) the contract was started from as contract_files, so
+    // they're linkable from the contract's own page - previously they were
+    // only referenced via webhook_intake_events.raw_files, invisible in the
+    // UI once intake finished. They physically live in the environment's
+    // storage bucket (downloaded above via getEnvironmentStorageProvider,
+    // not copied here), so the download route serves intake_upload rows from
+    // that bucket - see app/api/contracts/[id]/files/[fileId]/route.ts.
+    if (downloadedRawFiles.length > 0) {
+      await admin.from("contract_files").insert(
+        downloadedRawFiles.map((f) => ({
+          contract_id: contract.id,
+          org_id: event.org_id,
+          file_role: "intake_upload",
+          storage_provider: f.provider,
+          storage_path: f.storage_path,
+          google_drive_file_id: f.drive_file_id ?? null,
+          original_filename: f.filename,
+          mime_type: f.mime_type,
+          size_bytes: f.size_bytes,
+        })),
+      );
+    }
 
     if (extractionUsage) {
       await logAiUsage(admin, {

@@ -43,6 +43,8 @@ export default async function ContractDetailPage({
     : { data: [] };
 
   const files = await listContractFiles(readClient, contractId);
+  const draftFiles = files.filter((f) => f.file_role === "draft_version");
+  const submittedFiles = files.filter((f) => f.file_role !== "draft_version");
 
   return (
     <div className="stack">
@@ -58,12 +60,12 @@ export default async function ContractDetailPage({
       <ContractChat contractId={contractId} initialMessages={messages ?? []} initialStatus={contract.status} />
 
       <div className="card stack">
-        <h2 style={{ marginTop: 0 }}>קבצי החוזה</h2>
-        {files.length === 0 ? (
+        <h2 style={{ marginTop: 0 }}>טיוטות</h2>
+        {draftFiles.length === 0 ? (
           <p style={{ color: "var(--text-muted)" }}>עדיין אין טיוטות.</p>
         ) : (
           <ul style={{ margin: 0, paddingInlineStart: "1.2rem" }}>
-            {files.map((f) => (
+            {draftFiles.map((f) => (
               <li key={f.id}>
                 <a href={`/api/contracts/${contractId}/files/${f.id}`}>
                   {f.original_filename} {f.version ? `(גרסה ${f.version})` : ""}
@@ -73,6 +75,23 @@ export default async function ContractDetailPage({
           </ul>
         )}
       </div>
+
+      {submittedFiles.length > 0 && (
+        <div className="card stack">
+          <h2 style={{ marginTop: 0 }}>קבצים שהוגשו בתהליך</h2>
+          <ul style={{ margin: 0, paddingInlineStart: "1.2rem" }}>
+            {submittedFiles.map((f) => (
+              <li key={f.id}>
+                <a href={`/api/contracts/${contractId}/files/${f.id}`}>{f.original_filename}</a>
+                <span style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>
+                  {" "}
+                  ({f.file_role === "intake_upload" ? "קובץ פתיחת החוזה" : "צורף בצ'אט"})
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
