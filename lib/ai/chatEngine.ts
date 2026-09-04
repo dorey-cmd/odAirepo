@@ -237,17 +237,19 @@ async function runChatTurnLocked(
   const claude = createClaudeClient();
   let response;
   try {
-    // Raised from 16000: real usage showed the model naturally producing
-    // ~7-9K tokens/turn well under that ceiling - turn granularity was a
-    // prompt-wording choice, not a budget limit. A higher ceiling plus the
-    // tightened SECTIONING guidance (draftingSystemPrompt.ts) lets it pack
-    // more per call, which directly cuts the number of turns - and since
-    // each turn resends everything drafted so far, fewer turns means less
-    // total volume transmitted across the whole drafting pass.
+    // Raised from 16000 (real usage showed ~7-9K tokens/turn well under that
+    // ceiling - turn granularity was a prompt-wording choice, not a budget
+    // limit), but capped well short of the model's real ceiling: a live test
+    // at 64000 produced turns taking up to ~420s of wall-clock generation
+    // time - over the 300s Vercel maxDuration on the chat/continue-draft
+    // routes (vercel.json), risking exactly the hard-kill-mid-turn failure
+    // mode fixed earlier. 32000 keeps most of the turn-count reduction
+    // (fewer turns means less of the growing draft gets resent overall)
+    // while leaving real margin under the timeout.
     const stream = claude.messages.stream(
       {
         model: DRAFTING_MODEL,
-        max_tokens: 64000,
+        max_tokens: 32000,
         system: systemBlocks,
         tools: CHAT_TOOLS,
         tool_choice: { type: "auto" },

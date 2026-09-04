@@ -55,11 +55,13 @@ export function buildDraftingSystemPrompt(input: DraftingPromptInput): {
       `guidelines below, you may also call propose_guideline_update in the same turn.\n\n` +
       `SECTIONING: Each call to submit_draft_section is real, billable overhead on top of whatever it ` +
       `contains - re-sending the full prompt, tool definitions, and everything drafted so far. Prefer ` +
-      `FEWER, LARGER calls: pack every heading/clause/appendix you can coherently produce in one response ` +
-      `into a SINGLE call, and only start a new one when you are genuinely running low on room to keep ` +
-      `going - not by habit, and not just because you reached one logical heading. Splitting into multiple ` +
-      `sections exists purely so no single call risks failing outright on a very large document - it is ` +
-      `not a target to aim for, and small, cautious sections directly cost the lawyer money for no benefit. ` +
+      `FEWER, LARGER calls: aim for a substantial chunk each time - several headings/clauses, or a full ` +
+      `appendix - rather than one small heading at a time; small, cautious sections directly cost the ` +
+      `lawyer money for no benefit. That said, there's no need to push all the way to your absolute output ` +
+      `limit on every call either - a natural, well-sized chunk you're confident you can produce cleanly is ` +
+      `better than stretching for the maximum possible length. Splitting into multiple sections exists ` +
+      `purely so no single call risks failing outright on a very large document - it is not a target to aim ` +
+      `for. ` +
       `You are still the single author of one coherent document: before every call, check the DRAFT SO FAR ` +
       `below (when present) so terminology, defined terms, numbering, and cross-references stay consistent ` +
       `with what you already wrote, and the finished contract reads as one continuous work, not disconnected ` +

@@ -100,6 +100,21 @@ async function main() {
     content: "קיבלתי את כל הפרטים הנדרשים ליצירת החוזה. מתחיל להכין טיוטה...",
   });
 
+  // This is a fully unattended gate - a real lawyer would answer clarifying
+  // questions, but nothing here can. Pre-seed a standing instruction so an
+  // ambiguous/complex template (judgment calls, blank fields) doesn't stall
+  // the run waiting for a reply that will never come; the AI is still free
+  // to use `flag` to surface anything it's unsure about, same as it would
+  // for a real lawyer who hasn't answered yet.
+  await admin.from("contract_chat_messages").insert({
+    chat_id: chat.id,
+    org_id: environment.org_id,
+    role: "lawyer",
+    content:
+      "תשתמש בברירות המחדל של התבנית המקורית לכל פרט שלא הוגדר במפורש (כולל שדות ריקים שיישארו כפלייסהולדרים). " +
+      "אל תשאל שאלות הבהרה - סמן ב-flag כל מקום שאתה לא בטוח לגביו, והמשך לנסח.",
+  });
+
   const MAX_TURNS = 60;
   let turnCount = 0;
   for (let i = 1; i <= MAX_TURNS; i++) {
@@ -215,17 +230,26 @@ print(f"{len(d.paragraphs)} {under}")
   // --- Criterion: substantive legal quality (LLM-as-judge) ---
   const docText = await extractText(fileBuffer, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "draft.docx");
   const claude = createClaudeClient();
-  const judgeResponse = await claude.messages.create({
+  const judgeStream = claude.messages.stream({
     model: DRAFTING_MODEL,
-    max_tokens: 2000,
+    // Extended thinking on this model consumed its entire max_tokens budget
+    // on internal reasoning in testing - once at 8000, once again at 20000 -
+    // leaving zero room for the actual verdict. Disabled here so the budget
+    // goes deterministically to the structured JSON response this call needs.
+    thinking: { type: "disabled" },
+    max_tokens: 8000,
     system:
       "You are a senior contracts lawyer reviewing a colleague's AI-assisted draft before it goes to a client. " +
       "Judge strictly against real practice standards: internal consistency (defined terms used consistently, no " +
       "contradicted clauses, cross-references that still make sense), completeness for the contract type, and " +
-      "professional Hebrew legal register. Reply with a JSON object only: " +
-      '{"pass": boolean, "score_1_to_10": number, "issues": string[], "summary": string} - issues in Hebrew.',
+      "professional Hebrew legal register. For EVERY issue you report, quote the exact problematic text verbatim " +
+      "from the document (not a paraphrase) so the finding can be verified against the source - do not report an " +
+      "issue you cannot ground in an exact quote. Reply with a JSON object only: " +
+      '{"pass": boolean, "score_1_to_10": number, "issues": [{"quote": string, "problem": string}], "summary": ' +
+      'string} - problem/summary in Hebrew.',
     messages: [{ role: "user", content: docText.slice(0, 100000) }],
   });
+  const judgeResponse = await judgeStream.finalMessage();
   await logAiUsage(admin, {
     orgId: environment.org_id,
     contractId: contract.id,
@@ -234,20 +258,33 @@ print(f"{len(d.paragraphs)} {under}")
     usage: { input_tokens: judgeResponse.usage.input_tokens, output_tokens: judgeResponse.usage.output_tokens },
   });
   const judgeText = judgeResponse.content.find((b) => b.type === "text");
-  let judgeVerdict: { pass: boolean; score_1_to_10: number; issues: string[]; summary: string } | null = null;
+  interface JudgeVerdict {
+    pass: boolean;
+    score_1_to_10: number;
+    issues: { quote: string; problem: string }[];
+    summary: string;
+  }
+  let judgeVerdict: JudgeVerdict | null = null;
+  const rawJudgeText = judgeText && "text" in judgeText ? judgeText.text : "";
   try {
-    const raw = judgeText && "text" in judgeText ? judgeText.text : "";
-    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    const jsonMatch = rawJudgeText.match(/\{[\s\S]*\}/);
     if (jsonMatch) judgeVerdict = JSON.parse(jsonMatch[0]);
   } catch {
     // fall through to failure below
   }
+  // The judge can hallucinate a plausible-sounding but nonexistent quote (observed
+  // in practice) - only count an issue as grounded if its quote actually appears
+  // in the rendered document, so the report can't be misled by a false positive.
+  const groundedIssues = (judgeVerdict?.issues ?? []).filter((i) => docText.includes(i.quote));
+  const ungroundedCount = (judgeVerdict?.issues.length ?? 0) - groundedIssues.length;
   record(
     "substantive legal quality (LLM judge)",
     Boolean(judgeVerdict?.pass),
     judgeVerdict
-      ? `score ${judgeVerdict.score_1_to_10}/10 - ${judgeVerdict.summary}${judgeVerdict.issues.length ? `\n    issues: ${judgeVerdict.issues.join("; ")}` : ""}`
-      : "judge did not return a parseable verdict",
+      ? `score ${judgeVerdict.score_1_to_10}/10 - ${judgeVerdict.summary}` +
+        `${groundedIssues.length ? `\n    grounded issues (quote verified in document):\n` + groundedIssues.map((i) => `      - "${i.quote}" — ${i.problem}`).join("\n") : ""}` +
+        `${ungroundedCount ? `\n    (${ungroundedCount} additional issue(s) discarded - quote not found verbatim in the document, likely a judge hallucination)` : ""}`
+      : `judge did not return a parseable verdict (stop_reason=${judgeResponse.stop_reason}); raw: ${rawJudgeText.slice(0, 500)}`,
   );
 
   console.log(`\nExpected filename: ${buildDraftFilename(environment, extractedFields, 1)} (for reference only - actual uses real filled_fields)`);
